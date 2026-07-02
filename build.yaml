@@ -4,8 +4,8 @@
 name: "Kids Watch-Time Limit"
 guid: "a1e5c7f2-3b4d-4e6a-9c8b-2d1f0e3a5b7c"
 version: "1.0.0.0"
-targetAbi: "10.10.0.0"
-framework: "net8.0"
+targetAbi: "10.11.11.0"
+framework: "net9.0"
 overview: "Cumulative daily watch-time limits for kids."
 description: >
   Enforces cumulative daily watch-time limits for kids: per-user, per-weekday,

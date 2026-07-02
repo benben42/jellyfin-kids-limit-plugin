@@ -9,7 +9,7 @@ limit is reached, **stops the offending session** (best-effort on-screen warning
 too). It never mutates the user's account or library permissions. See
 [`REQUIREMENTS.md`](REQUIREMENTS.md) for the full specification.
 
-Target: **Jellyfin 10.10.x** (net8.0). Built with the modern
+Target: **Jellyfin 10.11.x** (net9.0). Built with the modern
 `IHostedService` + `IPluginServiceRegistrator` model.
 
 ---
@@ -44,11 +44,12 @@ a client that ignores a single Stop still gets stopped repeatedly.
 ## Building
 
 The CI workflow (`.github/workflows/build.yml`) builds the DLL on every push and
-uploads it as an artifact. To build locally you need the **.NET 8 SDK**:
+uploads it as an artifact. To build locally you need the **.NET 9 SDK**
+(Jellyfin 10.11 targets net9.0):
 
 ```bash
 dotnet build Jellyfin.Plugin.KidsLimit.csproj -c Release
-# → bin/Release/net8.0/Jellyfin.Plugin.KidsLimit.dll
+# → bin/Release/net9.0/Jellyfin.Plugin.KidsLimit.dll
 ```
 
 ## Installing

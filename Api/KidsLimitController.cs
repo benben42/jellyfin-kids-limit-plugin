@@ -223,12 +223,9 @@ public class KidsLimitController : ControllerBase
             return null;
         }
 
-        Jellyfin.Data.Entities.User? user = null;
-        if (Guid.TryParse(idOrName, out var g))
-        {
-            user = _userManager.GetUserById(g);
-        }
-
+        // Use var so we don't hard-code the entity namespace, which moved between
+        // Jellyfin releases (10.11 relocated it to Jellyfin.Database.Implementations).
+        var user = Guid.TryParse(idOrName, out var g) ? _userManager.GetUserById(g) : null;
         user ??= _userManager.GetUserByName(idOrName);
         if (user is null)
         {
