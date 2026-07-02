@@ -1,0 +1,1 @@
+# jellyfin-kids-limit-plugin
