@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Kids Watch-Time Dashboard</title>
+</head>
+<body>
+<div id="kidsLimitDashboardPage" data-role="page" class="page type-interior pluginConfigurationPage"
+     data-require="emby-input,emby-button">
+    <div data-role="content">
+        <div class="content-primary">
+            <div class="verticalSection">
+                <h2 class="sectionTitle">Kids Watch-Time Dashboard
+                    <button is="emby-button" type="button" id="btnRefresh" class="raised"
+                            style="margin-left:1em;"><span>Refresh</span></button>
+                </h2>
+                <p id="dashStatus" class="fieldDescription"></p>
+            </div>
+            <div id="cards"></div>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+    (function () {
+        var pluginId = 'a1e5c7f2-3b4d-4e6a-9c8b-2d1f0e3a5b7c';
+        var page;
+        var token = '';
+        var refreshTimer;
+
+        function esc(s) { return (s || '').toString().replace(/[&<>"]/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+        function fmt(sec) {
+            sec = Math.max(0, Math.round(sec || 0));
+            var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+            if (h > 0) { return h + 'h ' + m + 'm'; }
+            return m + 'm';
+        }
+        function capText(min) { return (min === null || min === undefined) ? '∞' : fmt(min * 60); }
+
+        function api(path, method) {
+            var url = ApiClient.getUrl('KidsLimit/' + path);
+            url += (url.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(token);
+            return ApiClient.ajax({ type: method || 'GET', url: url, dataType: 'json' });
+        }
+
+        function windowRow(label, used, cap) {
+            var over = (cap !== null && cap !== undefined && used > cap * 60);
+            return '<div style="display:flex;justify-content:space-between;">' +
+                '<span>' + label + '</span>' +
+                '<span style="' + (over ? 'color:#c00;font-weight:bold;' : '') + '">' +
+                fmt(used) + ' / ' + capText(cap) + '</span></div>';
+        }
+
+        function renderCard(s) {
+            var remaining = s.HasLimit ? fmt(s.EffectiveRemainingSeconds) : '∞';
+            var remColor = (s.HasLimit && s.EffectiveRemainingSeconds <= 0) ? '#c00'
+                : (s.HasLimit && s.EffectiveRemainingSeconds <= 600) ? '#e67e00' : '#2a2';
+
+            var html = '<div class="paperList" style="padding:1em;margin-bottom:1em;" data-userid="' + esc(s.UserId) + '">' +
+                '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+                '<h3 style="margin:0;">' + esc(s.UserName) + '</h3>' +
+                '<span class="fieldDescription">' + esc(s.PresetName) + ' · ' + esc(s.CurrentWindow) + '</span></div>' +
+                (s.Blocked ? '<div style="color:#c00;font-weight:bold;">■ Currently blocked (over limit)</div>' : '') +
+                '<div style="font-size:1.4em;margin:.3em 0;color:' + remColor + ';">' +
+                'Remaining: <strong>' + remaining + '</strong>' +
+                (s.HasLimit && s.BindingCap ? ' <span class="fieldDescription">(' + esc(s.BindingCap) + ' cap)</span>' : '') +
+                '</div>' +
+                '<div>Watched today: <strong>' + fmt(s.SecondsWatchedTotal) + '</strong> / ' + capText(s.DailyCapMinutes) +
+                (s.BonusSeconds > 0 ? ' <span style="color:#2a2;">(+' + fmt(s.BonusSeconds) + ' bonus)</span>' : '') + '</div>' +
+                '<div>Current session: ' + fmt(s.CurrentSessionSeconds) + ' / ' + capText(s.SessionCapMinutes) + '</div>' +
+                '<div style="margin:.5em 0;">' +
+                windowRow('Morning', s.SecondsMorning, s.MorningCapMinutes) +
+                windowRow('Afternoon', s.SecondsAfternoon, s.AfternoonCapMinutes) +
+                windowRow('Evening', s.SecondsEvening, s.EveningCapMinutes) +
+                '</div>' +
+                '<div id="hist-' + esc(s.UserId) + '" class="fieldDescription">History…</div>' +
+                '<div style="margin-top:.5em;">' +
+                bonusBtn(s.UserId, 10) + bonusBtn(s.UserId, 30) + bonusBtn(s.UserId, 60) +
+                '<button is="emby-button" type="button" class="raised btnCustom" data-userid="' + esc(s.UserId) + '"><span>+ custom</span></button>' +
+                '<button is="emby-button" type="button" class="raised button-cancel btnStop" data-userid="' + esc(s.UserId) + '"><span>Stop now</span></button>' +
+                '</div></div>';
+            return html;
+        }
+
+        function bonusBtn(userId, mins) {
+            return '<button is="emby-button" type="button" class="raised btnBonus" data-userid="' + esc(userId) +
+                '" data-mins="' + mins + '"><span>+' + mins + '</span></button>';
+        }
+
+        function wire() {
+            page.querySelectorAll('.btnBonus').forEach(function (b) {
+                b.onclick = function () { grant(this.getAttribute('data-userid'), parseInt(this.getAttribute('data-mins'), 10)); };
+            });
+            page.querySelectorAll('.btnCustom').forEach(function (b) {
+                b.onclick = function () {
+                    var uid = this.getAttribute('data-userid');
+                    var v = prompt('Bonus minutes to grant (negative to remove):', '15');
+                    if (v !== null) { var n = parseInt(v, 10); if (n) { grant(uid, n); } }
+                };
+            });
+            page.querySelectorAll('.btnStop').forEach(function (b) {
+                b.onclick = function () { stop(this.getAttribute('data-userid')); };
+            });
+        }
+
+        function grant(userId, mins) {
+            api('bonus?user=' + encodeURIComponent(userId) + '&minutes=' + mins, 'POST')
+                .then(load, function () { Dashboard.alert('Failed to grant bonus.'); });
+        }
+        function stop(userId) {
+            api('stop?user=' + encodeURIComponent(userId), 'POST')
+                .then(function () { setTimeout(load, 500); }, function () { Dashboard.alert('Failed to stop.'); });
+        }
+
+        function loadHistory(userId) {
+            api('history/' + encodeURIComponent(userId) + '?days=7').then(function (hist) {
+                var el = page.querySelector('#hist-' + userId);
+                if (!el) { return; }
+                if (!hist || !hist.length) { el.textContent = 'No history yet.'; return; }
+                var total = hist.reduce(function (a, h) { return a + h.SecondsWatchedTotal; }, 0);
+                var avg = total / hist.length;
+                el.textContent = 'Last ' + hist.length + ' day(s): avg ' + fmt(avg) + '/day, total ' + fmt(total) + '.';
+            }, function () {});
+        }
+
+        function load() {
+            if (!token) { return; }
+            api('status').then(function (list) {
+                page.querySelector('#dashStatus').textContent =
+                    (list.length ? list.length + ' user(s) tracked.' : 'No enabled users. Enable kids in plugin settings.') +
+                    ' Updated ' + new Date().toLocaleTimeString() + '.';
+                page.querySelector('#cards').innerHTML = list.map(renderCard).join('');
+                wire();
+                list.forEach(function (s) { loadHistory(s.UserId); });
+            }, function () {
+                page.querySelector('#dashStatus').textContent = 'Failed to load status. Check the API token in settings.';
+            });
+        }
+
+        document.querySelector('#kidsLimitDashboardPage').addEventListener('pageshow', function () {
+            page = this;
+            Dashboard.showLoadingMsg();
+            ApiClient.getPluginConfiguration(pluginId).then(function (cfg) {
+                token = cfg.BonusApiToken || '';
+                Dashboard.hideLoadingMsg();
+                if (!token) {
+                    page.querySelector('#dashStatus').innerHTML =
+                        'No API token is set. Open <a href="configurationpage?name=KidsLimitConfig">plugin settings</a> and generate one.';
+                    return;
+                }
+                load();
+                refreshTimer = setInterval(load, 15000);
+            });
+
+            page.querySelector('#btnRefresh').addEventListener('click', load);
+        });
+
+        document.querySelector('#kidsLimitDashboardPage').addEventListener('pagehide', function () {
+            if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+        });
+    })();
+    </script>
+</div>
+</body>
+</html>

@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Kids Watch-Time Limit</title>
+</head>
+<body>
+<div id="kidsLimitConfigPage" data-role="page" class="page type-interior pluginConfigurationPage"
+     data-require="emby-input,emby-button,emby-select,emby-checkbox,emby-collapse">
+    <div data-role="content">
+        <div class="content-primary">
+            <form id="kidsLimitConfigForm">
+                <div class="verticalSection">
+                    <h2 class="sectionTitle">Kids Watch-Time Limit</h2>
+                    <p>
+                        Enforces cumulative daily watch-time limits per kid. Users not enabled below
+                        are treated as unlimited adults. See the
+                        <a is="emby-linkbutton" class="button-link" href="configurationpage?name=KidsLimitDashboard">parent dashboard</a>
+                        for live status and bonus time.
+                    </p>
+                </div>
+
+                <div class="verticalSection">
+                    <h3 class="sectionTitle">Global time-of-day windows</h3>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="middayStart">Morning ends / Afternoon begins</label>
+                        <input is="emby-input" type="time" id="middayStart" />
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="eveningStart">Afternoon ends / Evening begins</label>
+                        <input is="emby-input" type="time" id="eveningStart" />
+                    </div>
+                    <div class="fieldDescription">
+                        Morning = 00:00 to the first cut-point, Afternoon = between the two, Evening = last cut-point to 24:00.
+                    </div>
+                </div>
+
+                <div class="verticalSection">
+                    <h3 class="sectionTitle">Parent API token</h3>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="bonusApiToken">Shared secret for the REST bonus/status API</label>
+                        <input is="emby-input" type="text" id="bonusApiToken" />
+                    </div>
+                    <button is="emby-button" type="button" id="btnGenerateToken" class="raised button-cancel block">
+                        <span>Generate random token</span>
+                    </button>
+                    <div class="fieldDescription">
+                        Leave blank to disable the REST API entirely. Example:
+                        <code>POST /KidsLimit/bonus?user=NAME&amp;minutes=30&amp;token=SECRET</code>
+                    </div>
+                </div>
+
+                <div class="verticalSection">
+                    <h3 class="sectionTitle">Presets</h3>
+                    <div class="fieldDescription">Leave a cap blank for "unlimited".</div>
+                    <div id="presetsContainer"></div>
+                    <button is="emby-button" type="button" id="btnAddPreset" class="raised block">
+                        <span>Add preset</span>
+                    </button>
+                </div>
+
+                <div class="verticalSection">
+                    <h3 class="sectionTitle">Per-user limits</h3>
+                    <div class="fieldDescription">
+                        Enable a kid, then assign a preset to each weekday. Date overrides beat the weekly schedule.
+                    </div>
+                    <div id="usersContainer"></div>
+                </div>
+
+                <div>
+                    <button is="emby-button" type="submit" class="raised button-submit block">
+                        <span>Save</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+    (function () {
+        var pluginId = 'a1e5c7f2-3b4d-4e6a-9c8b-2d1f0e3a5b7c';
+        var page;
+        var allUsers = [];
+        var presets = [];
+        var userConfigs = [];
+
+        var WEEKDAYS = [
+            ['MondayPresetId', 'Mon'], ['TuesdayPresetId', 'Tue'], ['WednesdayPresetId', 'Wed'],
+            ['ThursdayPresetId', 'Thu'], ['FridayPresetId', 'Fri'], ['SaturdayPresetId', 'Sat'],
+            ['SundayPresetId', 'Sun']
+        ];
+
+        function minutesToTime(mins) {
+            var h = Math.floor(mins / 60), m = mins % 60;
+            return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+        }
+        function timeToMinutes(str) {
+            var parts = (str || '00:00').split(':');
+            return (parseInt(parts[0], 10) || 0) * 60 + (parseInt(parts[1], 10) || 0);
+        }
+        function capValue(v) { return (v === null || v === undefined || v === '') ? null : parseInt(v, 10); }
+        function normId(id) { return (id || '').replace(/-/g, '').toLowerCase(); }
+        function esc(s) { return (s || '').replace(/[&<>"]/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+        function presetOptions(selectedId) {
+            var opts = '<option value="">— none / unlimited —</option>';
+            presets.forEach(function (p) {
+                opts += '<option value="' + esc(p.Id) + '"' +
+                    (normId(p.Id) === normId(selectedId) ? ' selected' : '') + '>' + esc(p.Name) + '</option>';
+            });
+            return opts;
+        }
+
+        function renderPresets() {
+            var html = '';
+            presets.forEach(function (p, i) {
+                html += '<div class="paperList" style="padding:1em;margin-bottom:1em;" data-idx="' + i + '">' +
+                    '<div class="inputContainer"><label class="inputLabel inputLabelUnfocused">Name</label>' +
+                    '<input is="emby-input" type="text" class="presetName" value="' + esc(p.Name) + '" /></div>' +
+                    capField('Daily cap (min)', 'DailyCapMinutes', p.DailyCapMinutes) +
+                    capField('Session cap (min)', 'SessionCapMinutes', p.SessionCapMinutes) +
+                    capField('Morning cap (min)', 'MorningCapMinutes', p.MorningCapMinutes) +
+                    capField('Afternoon cap (min)', 'AfternoonCapMinutes', p.AfternoonCapMinutes) +
+                    capField('Evening cap (min)', 'EveningCapMinutes', p.EveningCapMinutes) +
+                    '<button is="emby-button" type="button" class="raised button-cancel block btnRemovePreset">' +
+                    '<span>Remove preset</span></button></div>';
+            });
+            page.querySelector('#presetsContainer').innerHTML = html;
+
+            page.querySelectorAll('.btnRemovePreset').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    var idx = parseInt(this.closest('[data-idx]').getAttribute('data-idx'), 10);
+                    collectPresets();
+                    presets.splice(idx, 1);
+                    renderPresets();
+                    renderUsers();
+                });
+            });
+        }
+
+        function capField(label, key, val) {
+            return '<div class="inputContainer"><label class="inputLabel inputLabelUnfocused">' + label + '</label>' +
+                '<input is="emby-input" type="number" min="0" class="cap" data-key="' + key + '" value="' +
+                (val === null || val === undefined ? '' : val) + '" /></div>';
+        }
+
+        function collectPresets() {
+            var cards = page.querySelectorAll('#presetsContainer [data-idx]');
+            cards.forEach(function (card, i) {
+                var p = presets[i];
+                p.Name = card.querySelector('.presetName').value.trim() || 'Preset';
+                if (!p.Id) { p.Id = 'preset-' + Date.now() + '-' + i; }
+                card.querySelectorAll('.cap').forEach(function (inp) {
+                    p[inp.getAttribute('data-key')] = capValue(inp.value);
+                });
+            });
+        }
+
+        function renderUsers() {
+            var html = '';
+            allUsers.forEach(function (u) {
+                var cfg = findUserCfg(u.Id) || { Enabled: false, WarnMinutesBeforeLimit: 10, DateOverrides: [] };
+                var weekdayHtml = '';
+                WEEKDAYS.forEach(function (wd) {
+                    weekdayHtml += '<div class="inputContainer" style="display:inline-block;margin-right:8px;">' +
+                        '<label class="inputLabel inputLabelUnfocused">' + wd[1] + '</label>' +
+                        '<select is="emby-select" class="weekday" data-key="' + wd[0] + '">' +
+                        presetOptions(cfg[wd[0]]) + '</select></div>';
+                });
+
+                var overridesHtml = '';
+                (cfg.DateOverrides || []).forEach(function (o) {
+                    overridesHtml += overrideRow(o.Date, o.PresetId);
+                });
+
+                html += '<div class="paperList" style="padding:1em;margin-bottom:1em;" data-userid="' + esc(u.Id) + '">' +
+                    '<h4 style="margin:0 0 .5em;">' + esc(u.Name) + '</h4>' +
+                    '<label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="userEnabled"' +
+                    (cfg.Enabled ? ' checked' : '') + ' /><span>Enable limits</span></label>' +
+                    '<div class="inputContainer"><label class="inputLabel inputLabelUnfocused">Warn minutes before limit</label>' +
+                    '<input is="emby-input" type="number" min="0" class="warnMinutes" value="' +
+                    (cfg.WarnMinutesBeforeLimit != null ? cfg.WarnMinutesBeforeLimit : 10) + '" /></div>' +
+                    '<div style="margin:.5em 0;"><strong>Weekly schedule</strong><br/>' + weekdayHtml + '</div>' +
+                    '<div><strong>Date overrides</strong><div class="overridesContainer">' + overridesHtml + '</div>' +
+                    '<button is="emby-button" type="button" class="raised block btnAddOverride"><span>Add date override</span></button></div>' +
+                    '</div>';
+            });
+            page.querySelector('#usersContainer').innerHTML = html;
+
+            page.querySelectorAll('.btnAddOverride').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    var container = this.previousElementSibling; // overridesContainer
+                    container.insertAdjacentHTML('beforeend', overrideRow('', ''));
+                    wireOverrideRemovals(container);
+                });
+            });
+            page.querySelectorAll('.overridesContainer').forEach(wireOverrideRemovals);
+        }
+
+        function overrideRow(date, presetId) {
+            return '<div class="overrideRow" style="margin:.3em 0;">' +
+                '<input is="emby-input" type="date" class="ovDate" value="' + esc(date) + '" style="margin-right:8px;" />' +
+                '<select is="emby-select" class="ovPreset" style="margin-right:8px;">' + presetOptions(presetId) + '</select>' +
+                '<button is="emby-button" type="button" class="raised button-cancel btnRemoveOverride"><span>×</span></button></div>';
+        }
+
+        function wireOverrideRemovals(container) {
+            container.querySelectorAll('.btnRemoveOverride').forEach(function (btn) {
+                btn.onclick = function () { this.closest('.overrideRow').remove(); };
+            });
+        }
+
+        function findUserCfg(userId) {
+            for (var i = 0; i < userConfigs.length; i++) {
+                if (normId(userConfigs[i].UserId) === normId(userId)) { return userConfigs[i]; }
+            }
+            return null;
+        }
+
+        function collectUsers() {
+            var result = [];
+            page.querySelectorAll('#usersContainer [data-userid]').forEach(function (card) {
+                var userId = card.getAttribute('data-userid');
+                var name = card.querySelector('h4').textContent;
+                var cfg = {
+                    UserId: userId,
+                    UserName: name,
+                    Enabled: card.querySelector('.userEnabled').checked,
+                    WarnMinutesBeforeLimit: parseInt(card.querySelector('.warnMinutes').value, 10) || 10,
+                    DateOverrides: []
+                };
+                card.querySelectorAll('.weekday').forEach(function (sel) {
+                    cfg[sel.getAttribute('data-key')] = sel.value;
+                });
+                card.querySelectorAll('.overrideRow').forEach(function (row) {
+                    var d = row.querySelector('.ovDate').value;
+                    var p = row.querySelector('.ovPreset').value;
+                    if (d && p) { cfg.DateOverrides.push({ Date: d, PresetId: p }); }
+                });
+                result.push(cfg);
+            });
+            return result;
+        }
+
+        function load() {
+            Dashboard.showLoadingMsg();
+            Promise.all([
+                ApiClient.getPluginConfiguration(pluginId),
+                ApiClient.getUsers()
+            ]).then(function (res) {
+                var cfg = res[0];
+                allUsers = res[1];
+                presets = cfg.Presets || [];
+                userConfigs = cfg.Users || [];
+
+                page.querySelector('#middayStart').value = minutesToTime(cfg.MiddayStartMinutes || 720);
+                page.querySelector('#eveningStart').value = minutesToTime(cfg.EveningStartMinutes || 1080);
+                page.querySelector('#bonusApiToken').value = cfg.BonusApiToken || '';
+
+                renderPresets();
+                renderUsers();
+                Dashboard.hideLoadingMsg();
+            });
+        }
+
+        function save() {
+            Dashboard.showLoadingMsg();
+            collectPresets();
+            ApiClient.getPluginConfiguration(pluginId).then(function (cfg) {
+                cfg.MiddayStartMinutes = timeToMinutes(page.querySelector('#middayStart').value);
+                cfg.EveningStartMinutes = timeToMinutes(page.querySelector('#eveningStart').value);
+                cfg.BonusApiToken = page.querySelector('#bonusApiToken').value.trim();
+                cfg.Presets = presets;
+                cfg.Users = collectUsers();
+                ApiClient.updatePluginConfiguration(pluginId, cfg).then(function (r) {
+                    Dashboard.processPluginConfigurationUpdateResult(r);
+                });
+            });
+        }
+
+        document.querySelector('#kidsLimitConfigPage').addEventListener('pageshow', function () {
+            page = this;
+            load();
+
+            page.querySelector('#btnAddPreset').addEventListener('click', function () {
+                collectPresets();
+                presets.push({ Id: '', Name: 'New preset', DailyCapMinutes: null, SessionCapMinutes: null,
+                    MorningCapMinutes: null, AfternoonCapMinutes: null, EveningCapMinutes: null });
+                renderPresets();
+                renderUsers();
+            });
+
+            page.querySelector('#btnGenerateToken').addEventListener('click', function () {
+                var arr = new Uint8Array(24);
+                (window.crypto || window.msCrypto).getRandomValues(arr);
+                var token = Array.prototype.map.call(arr, function (b) {
+                    return ('0' + b.toString(16)).slice(-2); }).join('');
+                page.querySelector('#bonusApiToken').value = token;
+            });
+        });
+
+        document.querySelector('#kidsLimitConfigForm').addEventListener('submit', function (e) {
+            e.preventDefault();
+            save();
+            return false;
+        });
+    })();
+    </script>
+</div>
+</body>
+</html>
