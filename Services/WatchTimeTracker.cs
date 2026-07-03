@@ -214,6 +214,7 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
 
                 if (remaining.RemainingSeconds <= 0)
                 {
+                    decision.NewlyBlocked = !ss.Blocked;
                     ss.Blocked = true;
                     decision.Stop = true; // Re-send every tick for robustness against clients that ignore it.
                 }
@@ -230,7 +231,25 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
 
             if (decision.Stop)
             {
-                _ = SendStopAsync(sessionId);
+                if (decision.NewlyBlocked)
+                {
+                    // Log the client's advertised control capabilities so it's obvious from
+                    // the server log whether the TV even claims to accept remote Stop. The
+                    // Jellyfin Android TV client is known to report these as false (see
+                    // REQUIREMENTS.md §2.1) and to ignore server-sent commands.
+                    _logger.LogInformation(
+                        "KidsLimit: user {User} is over limit on session {Session} " +
+                        "(client='{Client}', device='{Device}', supportsRemoteControl={RemoteControl}, " +
+                        "supportsMediaControl={MediaControl}); sending Stop.",
+                        userId,
+                        sessionId,
+                        session.Client,
+                        session.DeviceName,
+                        session.SupportsRemoteControl,
+                        session.Capabilities?.SupportsMediaControl);
+                }
+
+                _ = SendStopAsync(sessionId, session.Client, session.DeviceName);
             }
             else if (decision.Warn)
             {
@@ -243,17 +262,24 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
         }
     }
 
-    private async Task SendStopAsync(string sessionId)
+    private async Task SendStopAsync(string sessionId, string? client, string? device)
     {
+        // Each command is sent independently so a client that rejects one (e.g. no
+        // media-control support) doesn't prevent the others from being attempted.
+        var stopped = await TrySendPlaystateAsync(sessionId, PlaystateCommand.Stop, client, device)
+            .ConfigureAwait(false);
+
+        // Some clients honor Pause even when they ignore Stop; try it as a fallback so
+        // playback at least halts.
+        if (!stopped)
+        {
+            await TrySendPlaystateAsync(sessionId, PlaystateCommand.Pause, client, device)
+                .ConfigureAwait(false);
+        }
+
+        // Best-effort on-screen notice for clients that render it (web/mobile).
         try
         {
-            await _sessionManager.SendPlaystateCommand(
-                null,
-                sessionId,
-                new PlaystateRequest { Command = PlaystateCommand.Stop },
-                CancellationToken.None).ConfigureAwait(false);
-
-            // Best-effort on-screen notice for clients that render it (web/mobile).
             await _sessionManager.SendMessageCommand(
                 null,
                 sessionId,
@@ -267,7 +293,34 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "KidsLimit failed sending Stop to session {SessionId}.", sessionId);
+            _logger.LogDebug(ex, "KidsLimit: DisplayMessage to session {SessionId} failed.", sessionId);
+        }
+    }
+
+    private async Task<bool> TrySendPlaystateAsync(
+        string sessionId, PlaystateCommand command, string? client, string? device)
+    {
+        try
+        {
+            await _sessionManager.SendPlaystateCommand(
+                null,
+                sessionId,
+                new PlaystateRequest { Command = command },
+                CancellationToken.None).ConfigureAwait(false);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "KidsLimit: {Command} command was rejected by session {Session} " +
+                "(client='{Client}', device='{Device}'). This client likely ignores " +
+                "server-sent remote-control commands.",
+                command,
+                sessionId,
+                client,
+                device);
+            return false;
         }
     }
 
@@ -295,6 +348,7 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
     private struct Decision
     {
         public bool Stop;
+        public bool NewlyBlocked;
         public bool Warn;
         public long RemainingSeconds;
     }
