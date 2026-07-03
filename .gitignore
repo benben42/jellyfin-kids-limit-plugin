@@ -5,3 +5,5 @@ obj/
 .idea/
 *.nupkg
 artifacts/
+__pycache__/
+dist/
