@@ -269,7 +269,6 @@ public class KidsLimitController : ControllerBase
             .DefaultIfEmpty(0)
             .Max();
         dto.CurrentSessionSeconds = activeSessionSeconds;
-        dto.Blocked = state.ActiveSessions.Values.Any(s => s.Blocked);
 
         var preset = cfg is null ? null : LimitCalculator.ResolvePreset(cfg, config, local);
         if (preset is not null)
@@ -285,11 +284,18 @@ public class KidsLimitController : ControllerBase
             dto.HasLimit = remaining.HasLimit;
             dto.EffectiveRemainingSeconds = remaining.HasLimit ? remaining.RemainingSeconds : null;
             dto.BindingCap = remaining.BindingCap;
+
+            // Derive "blocked" from the live remaining computation rather than a sticky
+            // per-session flag. This way granting bonus time (which adds to the budget)
+            // clears the blocked indicator on the very next status poll, instead of the
+            // dashboard staying red until the next playback event happens to fire.
+            dto.Blocked = remaining.HasLimit && remaining.RemainingSeconds <= 0;
         }
         else
         {
             dto.PresetName = cfg?.Enabled == true ? "(no preset assigned)" : "(unlimited)";
             dto.HasLimit = false;
+            dto.Blocked = false;
         }
 
         return dto;
