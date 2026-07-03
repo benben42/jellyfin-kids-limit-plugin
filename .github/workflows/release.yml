@@ -1,0 +1,84 @@
+name: Release Plugin
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v1.0.0.0), must already exist'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Determine version
+        id: ver
+        run: |
+          TAG="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}"
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Restore
+        run: dotnet restore Jellyfin.Plugin.KidsLimit.csproj
+
+      - name: Build
+        run: |
+          dotnet build Jellyfin.Plugin.KidsLimit.csproj -c Release --no-restore \
+            -p:Version=${{ steps.ver.outputs.version }} \
+            -p:AssemblyVersion=${{ steps.ver.outputs.version }} \
+            -p:FileVersion=${{ steps.ver.outputs.version }}
+
+      - name: Package zip
+        id: pkg
+        run: |
+          ZIP_NAME="jellyfin-kids-limit-plugin_${{ steps.ver.outputs.version }}.zip"
+          mkdir -p dist
+          cp bin/Release/net9.0/Jellyfin.Plugin.KidsLimit.dll dist/
+          (cd dist && zip -j "$ZIP_NAME" Jellyfin.Plugin.KidsLimit.dll)
+          CHECKSUM=$(md5sum "dist/$ZIP_NAME" | cut -d' ' -f1)
+          echo "zip_name=$ZIP_NAME" >> "$GITHUB_OUTPUT"
+          echo "checksum=$CHECKSUM" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          files: dist/${{ steps.pkg.outputs.zip_name }}
+          generate_release_notes: true
+
+      - name: Update repository manifest on main
+        run: |
+          pip install --quiet pyyaml
+          git fetch origin main
+          git checkout main
+          python3 scripts/update_manifest.py \
+            --manifest manifest.json \
+            --build-yaml build.yaml \
+            --version "${{ steps.ver.outputs.version }}" \
+            --source-url "https://github.com/${{ github.repository }}/releases/download/${{ steps.ver.outputs.tag }}/${{ steps.pkg.outputs.zip_name }}" \
+            --checksum "${{ steps.pkg.outputs.checksum }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add manifest.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Update manifest.json for ${{ steps.ver.outputs.tag }}"
+            git push origin main
+          fi

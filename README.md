@@ -54,14 +54,46 @@ dotnet build Jellyfin.Plugin.KidsLimit.csproj -c Release
 
 ## Installing
 
-1. Copy `Jellyfin.Plugin.KidsLimit.dll` into a folder under your Jellyfin
-   `plugins` directory, e.g. `config/plugins/KidsLimit/`.
-2. Restart Jellyfin.
-3. Open **Dashboard → Plugins → Kids Watch-Time Limit** to configure.
+### Option A — Plugin repository (recommended, no manual DLL download)
 
-(Packaging into a proper repo zip via
-[`jprm`](https://github.com/oddstr13/jellyfin-plugin-repository-manager) using
-`build.yaml` is also supported.)
+1. In Jellyfin: **Dashboard → Plugins → Repositories → Add Repository**.
+2. **Repository Name:** `Kids Watch-Time Limit` (anything you like)
+3. **Repository URL:**
+   ```
+   https://raw.githubusercontent.com/benben42/jellyfin-kids-limit-plugin/main/manifest.json
+   ```
+4. Save, then go to **Dashboard → Plugins → Catalog**, find **Kids
+   Watch-Time Limit** under *General*, and install it.
+5. Restart Jellyfin, then configure it at **Dashboard → Plugins → Kids
+   Watch-Time Limit**.
+
+Jellyfin handles fetching and updating the plugin from there — new releases
+just show up as updates in the catalog.
+
+### Option B — Manual install
+
+1. Download the DLL from the [latest release](https://github.com/benben42/jellyfin-kids-limit-plugin/releases/latest)
+   (or build it yourself, see below).
+2. Copy `Jellyfin.Plugin.KidsLimit.dll` into a folder under your Jellyfin
+   `plugins` directory, e.g. `config/plugins/KidsLimit/`.
+3. Restart Jellyfin.
+4. Open **Dashboard → Plugins → Kids Watch-Time Limit** to configure.
+
+### Cutting a release (maintainer)
+
+Push a tag matching the version in `build.yaml` / the `.csproj`, prefixed
+with `v` (e.g. `v1.0.0.0`):
+
+```bash
+git tag v1.0.0.0
+git push origin v1.0.0.0
+```
+
+The `.github/workflows/release.yml` workflow then builds the DLL, zips it,
+publishes a GitHub Release with the zip attached, and commits an updated
+`manifest.json` (repository index) back to `main` — no manual steps needed.
+`build.yaml` is the single source of truth for the plugin's name, GUID,
+description, and target ABI used in that manifest.
 
 ## Configuration
 
