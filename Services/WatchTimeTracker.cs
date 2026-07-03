@@ -57,8 +57,8 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
         _maintenanceTimer = new Timer(
             OnMaintenance,
             null,
-            TimeSpan.FromSeconds(30),
-            TimeSpan.FromSeconds(30));
+            TimeSpan.FromSeconds(15),
+            TimeSpan.FromSeconds(15));
 
         _logger.LogInformation("KidsLimit tracker started.");
         return Task.CompletedTask;
@@ -89,6 +89,13 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
             var local = DateTime.Now;
             _store.RolloverAll(LimitCalculator.DateKey(local));
             _store.PruneIdleSessions(DateTime.UtcNow.AddHours(-6));
+
+            // Actively sweep live playback so enforcement (crediting time + re-sending
+            // Stop to over-limit sessions) does not depend on clients faithfully emitting
+            // PlaybackProgress events. Some clients go quiet after ignoring a Stop, which
+            // otherwise leaves them "blocked" on the dashboard yet still playing.
+            SweepActiveSessions();
+
             _store.FlushDebounced(force: true);
         }
         catch (Exception ex)
@@ -97,17 +104,35 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
         }
     }
 
-    private void OnPlaybackStart(object? sender, PlaybackProgressEventArgs e) => Handle(e, isStop: false);
+    private void OnPlaybackStart(object? sender, PlaybackProgressEventArgs e) => ProcessSession(e.Session, e.IsPaused, isStop: false);
 
-    private void OnPlaybackProgress(object? sender, PlaybackProgressEventArgs e) => Handle(e, isStop: false);
+    private void OnPlaybackProgress(object? sender, PlaybackProgressEventArgs e) => ProcessSession(e.Session, e.IsPaused, isStop: false);
 
-    private void OnPlaybackStopped(object? sender, PlaybackStopEventArgs e) => Handle(e, isStop: true);
+    private void OnPlaybackStopped(object? sender, PlaybackStopEventArgs e) => ProcessSession(e.Session, e.IsPaused, isStop: true);
 
-    private void Handle(PlaybackProgressEventArgs e, bool isStop)
+    /// <summary>
+    /// Polls all live playback sessions and runs the same crediting/enforcement path used
+    /// by playback events. Guards against clients that stop emitting PlaybackProgress
+    /// (or ignore a Stop) but keep playing.
+    /// </summary>
+    private void SweepActiveSessions()
+    {
+        foreach (var session in _sessionManager.Sessions)
+        {
+            if (session?.NowPlayingItem is null)
+            {
+                continue;
+            }
+
+            var isPaused = session.PlayState?.IsPaused ?? false;
+            ProcessSession(session, isPaused, isStop: false);
+        }
+    }
+
+    private void ProcessSession(SessionInfo? session, bool isPaused, bool isStop)
     {
         try
         {
-            var session = e.Session;
             if (session is null || string.IsNullOrEmpty(session.Id))
             {
                 return;
@@ -131,7 +156,6 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
             var today = LimitCalculator.DateKey(localNow);
             var window = LimitCalculator.WindowFor(localNow, config);
             var preset = LimitCalculator.ResolvePreset(userCfg, config, localNow);
-            var isPaused = e.IsPaused;
 
             var decision = default(Decision);
             var sessionId = session.Id;

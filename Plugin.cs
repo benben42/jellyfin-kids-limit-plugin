@@ -52,6 +52,12 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         {
             Name = "KidsLimitDashboard",
             EmbeddedResourcePath = GetType().Namespace + ".Web.dashboard.html",
+
+            // Surface the parent dashboard directly in the admin sidebar so parents don't
+            // have to dig through Plugins -> this plugin. The dashboard links to settings.
+            EnableInMainMenu = true,
+            DisplayName = "Kids Watch-Time",
+            MenuIcon = "schedule",
         },
     };
 
