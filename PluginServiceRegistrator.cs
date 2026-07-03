@@ -16,6 +16,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
     public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
     {
         serviceCollection.AddSingleton<StateStore>();
+        serviceCollection.AddSingleton<AccessScheduleEnforcer>();
         serviceCollection.AddHostedService<WatchTimeTracker>();
     }
 }

@@ -26,6 +26,7 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
 
     private readonly ISessionManager _sessionManager;
     private readonly StateStore _store;
+    private readonly AccessScheduleEnforcer _enforcer;
     private readonly ILogger<WatchTimeTracker> _logger;
 
     private Timer? _maintenanceTimer;
@@ -35,11 +36,17 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
     /// </summary>
     /// <param name="sessionManager">Session manager.</param>
     /// <param name="store">State store.</param>
+    /// <param name="enforcer">Access-schedule hard enforcer.</param>
     /// <param name="logger">Logger.</param>
-    public WatchTimeTracker(ISessionManager sessionManager, StateStore store, ILogger<WatchTimeTracker> logger)
+    public WatchTimeTracker(
+        ISessionManager sessionManager,
+        StateStore store,
+        AccessScheduleEnforcer enforcer,
+        ILogger<WatchTimeTracker> logger)
     {
         _sessionManager = sessionManager;
         _store = store;
+        _enforcer = enforcer;
         _logger = logger;
     }
 
@@ -97,6 +104,14 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
             SweepActiveSessions();
 
             _store.FlushDebounced(force: true);
+
+            // Hard enforcement (opt-in): reconcile native access schedules so over-limit
+            // kids are blocked server-side even on clients that ignore Stop (Android TV).
+            var config = Plugin.Instance?.Configuration;
+            if (config is not null)
+            {
+                _ = _enforcer.ReconcileAsync(config, LimitCalculator.DateKey(local), local);
+            }
         }
         catch (Exception ex)
         {

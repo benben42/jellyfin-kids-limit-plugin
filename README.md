@@ -33,11 +33,27 @@ export JELLYFIN_TOKEN="<admin API key from Dashboard → API Keys>"
 ```
 
 - **Stop works** → you're good; the plugin's monitor→kill model works.
-- **Stop does NOT work** → the core enforcement can't reach the primary client
-  (see `REQUIREMENTS.md` §2.1 / §12). Resolve that before depending on limits.
+- **Stop does NOT work** → the polite command can't reach the primary client
+  (see `REQUIREMENTS.md` §2.1 / §12). Use **Hard enforcement** (below) instead.
 
 The plugin also re-sends Stop on every progress tick (~10 s) while over limit, so
 a client that ignores a single Stop still gets stopped repeatedly.
+
+### Hard enforcement (for clients that ignore Stop, e.g. Android TV)
+
+If your TV swallows the Stop command, enable **Hard-block over-limit kids using
+Jellyfin's access schedule** in plugin settings (off by default). When a kid is
+over their **daily or window** limit, the plugin flips that user's native
+Jellyfin **access schedule** to blocked. Jellyfin enforces access schedules on
+the server for every request, so playback stops even on clients that ignore
+remote-control commands — no client cooperation required. Access is restored
+automatically when the kid is back under limit, is granted bonus, or at local
+midnight.
+
+Caveats: while over limit this blocks **all** Jellyfin access for that user (not
+just playback), and any parent-set access schedule is saved and restored around
+our block. **Turn the option off and Save before uninstalling the plugin** so no
+kid is left locked out.
 
 ---
 

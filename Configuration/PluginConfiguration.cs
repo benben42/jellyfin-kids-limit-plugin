@@ -20,6 +20,7 @@ public class PluginConfiguration : BasePluginConfiguration
         MiddayStartMinutes = 12 * 60; // 12:00
         EveningStartMinutes = 18 * 60; // 18:00
         BonusApiToken = string.Empty;
+        EnforceViaAccessSchedule = false;
         Presets = DefaultPresets();
         Users = new List<UserLimitConfig>();
     }
@@ -40,6 +41,17 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Gets or sets the shared secret used by the REST bonus/status endpoints.
     /// </summary>
     public string BonusApiToken { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the plugin should hard-enforce limits by
+    /// driving each kid's native Jellyfin access schedule. When on, a user who is over
+    /// their daily/window limit is blocked at the server (all access), which stops
+    /// playback even on clients that ignore the Stop command (e.g. Android TV). The
+    /// schedule is restored automatically when they are back under limit, granted bonus,
+    /// or at local midnight. Off by default. Note: this blocks all Jellyfin access for
+    /// that user while over limit, not just playback.
+    /// </summary>
+    public bool EnforceViaAccessSchedule { get; set; }
 
     /// <summary>
     /// Gets or sets the reusable named limit presets.
