@@ -51,6 +51,23 @@
                 </div>
 
                 <div class="verticalSection">
+                    <h3 class="sectionTitle">Hard enforcement</h3>
+                    <label class="checkboxContainer">
+                        <input is="emby-checkbox" type="checkbox" id="enforceViaAccessSchedule" />
+                        <span>Hard-block over-limit kids using Jellyfin's access schedule</span>
+                    </label>
+                    <div class="fieldDescription">
+                        Recommended if your client (e.g. Android TV) ignores the server's Stop command.
+                        When a kid is over their <strong>daily or window</strong> limit, the plugin blocks
+                        that user at the server so playback stops even on stubborn clients, and restores
+                        access automatically when they're back under limit, granted bonus, or at midnight.
+                        Note: while over limit this blocks <em>all</em> Jellyfin access for that user, not
+                        just playback. Turn this off (and Save) before uninstalling the plugin to release
+                        any active blocks.
+                    </div>
+                </div>
+
+                <div class="verticalSection">
                     <h3 class="sectionTitle">Presets</h3>
                     <div class="fieldDescription">Leave a cap blank for "unlimited".</div>
                     <div id="presetsContainer"></div>
@@ -257,6 +274,7 @@
                 page.querySelector('#middayStart').value = minutesToTime(cfg.MiddayStartMinutes || 720);
                 page.querySelector('#eveningStart').value = minutesToTime(cfg.EveningStartMinutes || 1080);
                 page.querySelector('#bonusApiToken').value = cfg.BonusApiToken || '';
+                page.querySelector('#enforceViaAccessSchedule').checked = !!cfg.EnforceViaAccessSchedule;
 
                 renderPresets();
                 renderUsers();
@@ -271,6 +289,7 @@
                 cfg.MiddayStartMinutes = timeToMinutes(page.querySelector('#middayStart').value);
                 cfg.EveningStartMinutes = timeToMinutes(page.querySelector('#eveningStart').value);
                 cfg.BonusApiToken = page.querySelector('#bonusApiToken').value.trim();
+                cfg.EnforceViaAccessSchedule = page.querySelector('#enforceViaAccessSchedule').checked;
                 cfg.Presets = presets;
                 cfg.Users = collectUsers();
                 ApiClient.updatePluginConfiguration(pluginId, cfg).then(function (r) {

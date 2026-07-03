@@ -32,6 +32,7 @@ public class KidsLimitController : ControllerBase
     private readonly StateStore _store;
     private readonly ISessionManager _sessionManager;
     private readonly IUserManager _userManager;
+    private readonly AccessScheduleEnforcer _enforcer;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="KidsLimitController"/> class.
@@ -39,11 +40,17 @@ public class KidsLimitController : ControllerBase
     /// <param name="store">State store.</param>
     /// <param name="sessionManager">Session manager.</param>
     /// <param name="userManager">User manager.</param>
-    public KidsLimitController(StateStore store, ISessionManager sessionManager, IUserManager userManager)
+    /// <param name="enforcer">Access-schedule hard enforcer.</param>
+    public KidsLimitController(
+        StateStore store,
+        ISessionManager sessionManager,
+        IUserManager userManager,
+        AccessScheduleEnforcer enforcer)
     {
         _store = store;
         _sessionManager = sessionManager;
         _userManager = userManager;
+        _enforcer = enforcer;
     }
 
     private PluginConfiguration Config =>
@@ -76,8 +83,13 @@ public class KidsLimitController : ControllerBase
             return NotFound($"Unknown user '{user}'.");
         }
 
-        var today = LimitCalculator.DateKey(DateTime.Now);
+        var localNow = DateTime.Now;
+        var today = LimitCalculator.DateKey(localNow);
         _store.GrantBonus(resolved.Value.UserIdN, today, (long)minutes * 60);
+
+        // Immediately reconcile the hard block so bonus time lets a blocked kid back in
+        // right away instead of waiting for the next background tick.
+        _ = _enforcer.ReconcileAsync(Config, today, localNow);
 
         return BuildStatus(resolved.Value);
     }
