@@ -125,11 +125,38 @@ public class StateStore
             s.DailyBonusSeconds += seconds;
             s.SessionBonusSeconds += seconds;
 
+            // Granting time also lifts a parent "Stop now" so the kid can play again.
+            s.ManuallyStopped = false;
+
             // Un-block any active sessions so "press play again" works immediately.
             foreach (var sess in s.ActiveSessions.Values)
             {
                 sess.Blocked = false;
                 sess.Warned = false;
+            }
+        });
+        FlushDebounced(force: true);
+    }
+
+    /// <summary>Sets (or clears) the parent "Stop now" flag for a user.</summary>
+    /// <param name="userId">The user id.</param>
+    /// <param name="localToday">Today's local date string.</param>
+    /// <param name="stopped">True to force-stop for the rest of the day; false to allow again.</param>
+    public void SetManualStop(string userId, string localToday, bool stopped)
+    {
+        Mutate(userId, localToday, s =>
+        {
+            s.ManuallyStopped = stopped;
+
+            // When lifting a manual stop, also clear any sticky per-session block flags so
+            // the kid can press play again without waiting for the next sweep.
+            if (!stopped)
+            {
+                foreach (var sess in s.ActiveSessions.Values)
+                {
+                    sess.Blocked = false;
+                    sess.Warned = false;
+                }
             }
         });
         FlushDebounced(force: true);
@@ -224,6 +251,7 @@ public class StateStore
         state.SecondsEvening = 0;
         state.DailyBonusSeconds = 0;
         state.SessionBonusSeconds = 0;
+        state.ManuallyStopped = false;
 
         // Keep active sessions but reset their per-day counters/flags.
         foreach (var sess in state.ActiveSessions.Values)
@@ -314,6 +342,7 @@ public class StateStore
         SecondsEvening = s.SecondsEvening,
         DailyBonusSeconds = s.DailyBonusSeconds,
         SessionBonusSeconds = s.SessionBonusSeconds,
+        ManuallyStopped = s.ManuallyStopped,
         ActiveSessions = s.ActiveSessions.ToDictionary(
             kv => kv.Key,
             kv => new SessionState

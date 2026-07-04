@@ -70,18 +70,26 @@ public sealed class AccessScheduleEnforcer
         {
             var window = LimitCalculator.WindowFor(local, config);
 
-            // Which users should be blocked right now (only when the feature is on).
+            // Which users should be blocked right now. A parent "Stop now" always hard-blocks
+            // (it's a deliberate manual action and the only thing that reliably stops clients
+            // like Android TV); automatic over-limit blocking is layered on only when the
+            // opt-in feature is enabled.
             var desired = new Dictionary<Guid, bool>();
-            if (config.EnforceViaAccessSchedule)
+            foreach (var cfg in config.Users)
             {
-                foreach (var cfg in config.Users)
+                if (!cfg.Enabled || !Guid.TryParse(cfg.UserId, out var guid))
                 {
-                    if (!cfg.Enabled || !Guid.TryParse(cfg.UserId, out var guid))
-                    {
-                        continue;
-                    }
+                    continue;
+                }
 
-                    var state = _store.GetOrCreate(guid.ToString("N", CultureInfo.InvariantCulture), today);
+                var state = _store.GetOrCreate(guid.ToString("N", CultureInfo.InvariantCulture), today);
+
+                if (state.ManuallyStopped)
+                {
+                    desired[guid] = true;
+                }
+                else if (config.EnforceViaAccessSchedule)
+                {
                     var preset = LimitCalculator.ResolvePreset(cfg, config, local);
                     desired[guid] = IsOverPersistentLimit(preset, state, window);
                 }

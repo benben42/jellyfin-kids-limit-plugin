@@ -141,10 +141,16 @@ public class KidsLimitController : ControllerBase
         return BuildStatus(resolved.Value);
     }
 
-    /// <summary>Immediately stops all active playback for a user.</summary>
+    /// <summary>
+    /// Immediately stops a user and hard-blocks them for the rest of the day. The block is
+    /// applied through the native access schedule so playback stops even on clients that
+    /// ignore the server's Stop command (e.g. Android TV), and it persists across a "press
+    /// play again" until the parent grants bonus, calls <see cref="Allow"/>, or midnight.
+    /// A best-effort Stop playstate command is also sent for clients that honor it.
+    /// </summary>
     /// <param name="user">User id or name.</param>
     /// <param name="token">Shared secret.</param>
-    /// <returns>Number of sessions stopped.</returns>
+    /// <returns>Number of sessions the Stop command was sent to.</returns>
     [HttpPost("stop")]
     public async Task<ActionResult<object>> Stop(
         [FromQuery] string user,
@@ -161,6 +167,15 @@ public class KidsLimitController : ControllerBase
             return NotFound($"Unknown user '{user}'.");
         }
 
+        var localNow = DateTime.Now;
+        var today = LimitCalculator.DateKey(localNow);
+
+        // Persist the manual stop, then reconcile the access schedule so the hard block is
+        // applied right away (works even where the Stop playstate command is ignored). This
+        // runs regardless of the auto-enforcement setting — it's a deliberate parent action.
+        _store.SetManualStop(resolved.Value.UserIdN, today, true);
+        await _enforcer.ReconcileAsync(Config, today, localNow).ConfigureAwait(false);
+
         var targetGuid = resolved.Value.UserGuid;
         var sessions = _sessionManager.Sessions
             .Where(s => s.UserId == targetGuid && s.NowPlayingItem is not null)
@@ -176,6 +191,38 @@ public class KidsLimitController : ControllerBase
         }
 
         return new { stopped = sessions.Count };
+    }
+
+    /// <summary>
+    /// Lifts a parent "Stop now" hold, restoring the user's access schedule so they can play
+    /// again (subject to their normal budget). Does not grant any extra time.
+    /// </summary>
+    /// <param name="user">User id or name.</param>
+    /// <param name="token">Shared secret.</param>
+    /// <returns>The user's updated status.</returns>
+    [HttpPost("allow")]
+    public async Task<ActionResult<UserStatusDto>> Allow(
+        [FromQuery] string user,
+        [FromQuery] string? token = null)
+    {
+        if (!Authorized(token))
+        {
+            return Unauthorized();
+        }
+
+        var resolved = ResolveUser(user);
+        if (resolved is null)
+        {
+            return NotFound($"Unknown user '{user}'.");
+        }
+
+        var localNow = DateTime.Now;
+        var today = LimitCalculator.DateKey(localNow);
+
+        _store.SetManualStop(resolved.Value.UserIdN, today, false);
+        await _enforcer.ReconcileAsync(Config, today, localNow).ConfigureAwait(false);
+
+        return BuildStatus(resolved.Value);
     }
 
     /// <summary>Gets finished-day history for a user (for averages/history charts).</summary>
@@ -273,6 +320,7 @@ public class KidsLimitController : ControllerBase
             SecondsAfternoon = state.SecondsAfternoon,
             SecondsEvening = state.SecondsEvening,
             BonusSeconds = state.DailyBonusSeconds,
+            ManuallyStopped = state.ManuallyStopped,
         };
 
         // Current session seconds = the busiest active session (usually just one).
@@ -308,6 +356,12 @@ public class KidsLimitController : ControllerBase
             dto.PresetName = cfg?.Enabled == true ? "(no preset assigned)" : "(unlimited)";
             dto.HasLimit = false;
             dto.Blocked = false;
+        }
+
+        // A parent "Stop now" hold blocks regardless of any remaining budget.
+        if (state.ManuallyStopped)
+        {
+            dto.Blocked = true;
         }
 
         return dto;

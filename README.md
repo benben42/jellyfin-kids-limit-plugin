@@ -136,7 +136,10 @@ directly:
 
 Per kid it shows today's used/remaining, current session, active preset,
 per-window usage, a 7-day average, and **+10 / +30 / +60 / custom bonus** and
-**Stop now** buttons.
+**Stop now** buttons. **Stop now** applies a hard block (via the native access
+schedule) so playback stops even on clients that ignore the Stop command, and
+holds until you press **Allow again**, grant bonus, or local midnight — the card
+flips to an **Allow again** button while a kid is stopped.
 
 ### Direct access (no Plugins drill-down)
 
@@ -155,7 +158,8 @@ Auth is the shared token via `?token=` or the `X-KidsLimit-Token` header.
 | `POST` | `/KidsLimit/bonus?user=&minutes=&token=` | Add bonus to daily + session (+ active window) |
 | `GET`  | `/KidsLimit/status?token=` | Status for all enabled users |
 | `GET`  | `/KidsLimit/status/{user}?token=` | Status for one user |
-| `POST` | `/KidsLimit/stop?user=&token=` | Immediately stop a user's playback |
+| `POST` | `/KidsLimit/stop?user=&token=` | Immediately stop a user and hard-block them for the rest of the day |
+| `POST` | `/KidsLimit/allow?user=&token=` | Lift a `stop` hold so the user can play again (no extra time granted) |
 | `GET`  | `/KidsLimit/history/{user}?days=&token=` | Finished-day rollups (averages/history) |
 
 One-tap phone shortcut / NFC / Home Assistant example:

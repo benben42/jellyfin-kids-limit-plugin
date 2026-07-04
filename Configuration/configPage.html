@@ -20,6 +20,13 @@
                     </p>
                 </div>
 
+                <div class="localnav kidsLimitTabs" style="display:flex;flex-wrap:wrap;gap:.4em;margin:0 0 1.25em;">
+                    <button is="emby-button" type="button" class="raised kidsLimitTab" data-tab="general"><span>General</span></button>
+                    <button is="emby-button" type="button" class="raised kidsLimitTab" data-tab="presets"><span>Presets</span></button>
+                    <button is="emby-button" type="button" class="raised kidsLimitTab" data-tab="users"><span>Per-user limits</span></button>
+                </div>
+
+                <div class="kidsLimitTabPage" data-tab="general">
                 <div class="verticalSection">
                     <h3 class="sectionTitle">Global time-of-day windows</h3>
                     <div class="inputContainer">
@@ -63,10 +70,15 @@
                         access automatically when they're back under limit, granted bonus, or at midnight.
                         Note: while over limit this blocks <em>all</em> Jellyfin access for that user, not
                         just playback. Turn this off (and Save) before uninstalling the plugin to release
-                        any active blocks.
+                        any active blocks. The dashboard's <strong>Stop now</strong> button always uses this
+                        same hard block (until you press Allow again, grant bonus, or midnight), regardless
+                        of this setting.
                     </div>
                 </div>
 
+                </div><!-- /tab general -->
+
+                <div class="kidsLimitTabPage" data-tab="presets">
                 <div class="verticalSection">
                     <h3 class="sectionTitle">Presets</h3>
                     <div class="fieldDescription">Leave a cap blank for "unlimited".</div>
@@ -75,7 +87,9 @@
                         <span>Add preset</span>
                     </button>
                 </div>
+                </div><!-- /tab presets -->
 
+                <div class="kidsLimitTabPage" data-tab="users">
                 <div class="verticalSection">
                     <h3 class="sectionTitle">Per-user limits</h3>
                     <div class="fieldDescription">
@@ -83,6 +97,7 @@
                     </div>
                     <div id="usersContainer"></div>
                 </div>
+                </div><!-- /tab users -->
 
                 <div>
                     <button is="emby-button" type="submit" class="raised button-submit block">
@@ -260,6 +275,16 @@
             return result;
         }
 
+        function showTab(name) {
+            page.querySelectorAll('.kidsLimitTabPage').forEach(function (p) {
+                p.style.display = (p.getAttribute('data-tab') === name) ? '' : 'none';
+            });
+            // Highlight the active tab by reusing the accent "submit" button style.
+            page.querySelectorAll('.kidsLimitTab').forEach(function (b) {
+                b.classList.toggle('button-submit', b.getAttribute('data-tab') === name);
+            });
+        }
+
         function load() {
             Dashboard.showLoadingMsg();
             Promise.all([
@@ -317,6 +342,11 @@
                     return ('0' + b.toString(16)).slice(-2); }).join('');
                 page.querySelector('#bonusApiToken').value = token;
             });
+
+            page.querySelectorAll('.kidsLimitTab').forEach(function (btn) {
+                btn.addEventListener('click', function () { showTab(this.getAttribute('data-tab')); });
+            });
+            showTab('general');
         });
 
         document.querySelector('#kidsLimitConfigForm').addEventListener('submit', function (e) {
