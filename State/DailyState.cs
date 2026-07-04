@@ -46,6 +46,14 @@ public class DailyState
     /// <summary>Gets or sets bonus seconds granted for the current session(s); expires at local midnight.</summary>
     public long SessionBonusSeconds { get; set; }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether a parent forced an immediate stop via the
+    /// dashboard ("Stop now"). While set, the user is hard-blocked for the rest of the day
+    /// regardless of remaining budget. Cleared by granting bonus, the Allow endpoint, or the
+    /// midnight rollover.
+    /// </summary>
+    public bool ManuallyStopped { get; set; }
+
     /// <summary>Gets or sets the transient per-session tracking, keyed by session id.</summary>
     public Dictionary<string, SessionState> ActiveSessions { get; set; } = new(StringComparer.Ordinal);
 

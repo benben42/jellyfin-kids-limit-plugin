@@ -33,6 +33,9 @@ public class UserStatusDto
     /// <summary>Gets or sets a value indicating whether an active session is currently blocked.</summary>
     public bool Blocked { get; set; }
 
+    /// <summary>Gets or sets a value indicating whether a parent forced a "Stop now" hold today.</summary>
+    public bool ManuallyStopped { get; set; }
+
     /// <summary>Gets or sets total playing seconds today.</summary>
     public long SecondsWatchedTotal { get; set; }
 

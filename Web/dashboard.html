@@ -63,7 +63,9 @@
                 '<div style="display:flex;justify-content:space-between;align-items:center;">' +
                 '<h3 style="margin:0;">' + esc(s.UserName) + '</h3>' +
                 '<span class="fieldDescription">' + esc(s.PresetName) + ' · ' + esc(s.CurrentWindow) + '</span></div>' +
-                (s.Blocked ? '<div style="color:#c00;font-weight:bold;">■ Currently blocked (over limit)</div>' : '') +
+                (s.ManuallyStopped
+                    ? '<div style="color:#c00;font-weight:bold;">■ Stopped by parent</div>'
+                    : (s.Blocked ? '<div style="color:#c00;font-weight:bold;">■ Currently blocked (over limit)</div>' : '')) +
                 '<div style="font-size:1.4em;margin:.3em 0;color:' + remColor + ';">' +
                 'Remaining: <strong>' + remaining + '</strong>' +
                 (s.HasLimit && s.BindingCap ? ' <span class="fieldDescription">(' + esc(s.BindingCap) + ' cap)</span>' : '') +
@@ -80,7 +82,9 @@
                 '<div style="margin-top:.5em;">' +
                 bonusBtn(s.UserId, 10) + bonusBtn(s.UserId, 30) + bonusBtn(s.UserId, 60) +
                 '<button is="emby-button" type="button" class="raised btnCustom" data-userid="' + esc(s.UserId) + '"><span>+ custom</span></button>' +
-                '<button is="emby-button" type="button" class="raised button-cancel btnStop" data-userid="' + esc(s.UserId) + '"><span>Stop now</span></button>' +
+                (s.ManuallyStopped
+                    ? '<button is="emby-button" type="button" class="raised button-submit btnAllow" data-userid="' + esc(s.UserId) + '"><span>Allow again</span></button>'
+                    : '<button is="emby-button" type="button" class="raised button-cancel btnStop" data-userid="' + esc(s.UserId) + '"><span>Stop now</span></button>') +
                 '</div></div>';
             return html;
         }
@@ -104,6 +108,9 @@
             page.querySelectorAll('.btnStop').forEach(function (b) {
                 b.onclick = function () { stop(this.getAttribute('data-userid')); };
             });
+            page.querySelectorAll('.btnAllow').forEach(function (b) {
+                b.onclick = function () { allow(this.getAttribute('data-userid')); };
+            });
         }
 
         function grant(userId, mins) {
@@ -113,6 +120,10 @@
         function stop(userId) {
             api('stop?user=' + encodeURIComponent(userId), 'POST')
                 .then(function () { setTimeout(load, 500); }, function () { Dashboard.alert('Failed to stop.'); });
+        }
+        function allow(userId) {
+            api('allow?user=' + encodeURIComponent(userId), 'POST')
+                .then(function () { setTimeout(load, 500); }, function () { Dashboard.alert('Failed to allow.'); });
         }
 
         function loadHistory(userId) {
