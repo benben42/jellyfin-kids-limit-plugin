@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.KidsLimit.Api.Models;
 using Jellyfin.Plugin.KidsLimit.Configuration;
@@ -10,7 +9,6 @@ using Jellyfin.Plugin.KidsLimit.Services;
 using Jellyfin.Plugin.KidsLimit.State;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Session;
-using MediaBrowser.Model.Session;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -32,7 +30,8 @@ public class KidsLimitController : ControllerBase
     private readonly StateStore _store;
     private readonly ISessionManager _sessionManager;
     private readonly IUserManager _userManager;
-    private readonly AccessScheduleEnforcer _enforcer;
+    private readonly HardBlockEnforcer _enforcer;
+    private readonly PlaybackTerminator _terminator;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="KidsLimitController"/> class.
@@ -40,17 +39,20 @@ public class KidsLimitController : ControllerBase
     /// <param name="store">State store.</param>
     /// <param name="sessionManager">Session manager.</param>
     /// <param name="userManager">User manager.</param>
-    /// <param name="enforcer">Access-schedule hard enforcer.</param>
+    /// <param name="enforcer">Hard-block enforcer.</param>
+    /// <param name="terminator">Playback terminator.</param>
     public KidsLimitController(
         StateStore store,
         ISessionManager sessionManager,
         IUserManager userManager,
-        AccessScheduleEnforcer enforcer)
+        HardBlockEnforcer enforcer,
+        PlaybackTerminator terminator)
     {
         _store = store;
         _sessionManager = sessionManager;
         _userManager = userManager;
         _enforcer = enforcer;
+        _terminator = terminator;
     }
 
     private PluginConfiguration Config =>
@@ -143,10 +145,11 @@ public class KidsLimitController : ControllerBase
 
     /// <summary>
     /// Immediately stops a user and hard-blocks them for the rest of the day. The block is
-    /// applied through the native access schedule so playback stops even on clients that
-    /// ignore the server's Stop command (e.g. Android TV), and it persists across a "press
-    /// play again" until the parent grants bonus, calls <see cref="Allow"/>, or midnight.
-    /// A best-effort Stop playstate command is also sent for clients that honor it.
+    /// applied server-side (using the configured hard-enforcement mode) so playback stops
+    /// even on clients that ignore the server's Stop command (e.g. Android TV), and it
+    /// persists across a "press play again" until the parent grants bonus, calls
+    /// <see cref="Allow"/>, or midnight. Stop/Pause commands are also sent and any
+    /// transcode/live stream is torn down for immediate effect.
     /// </summary>
     /// <param name="user">User id or name.</param>
     /// <param name="token">Shared secret.</param>
@@ -176,21 +179,8 @@ public class KidsLimitController : ControllerBase
         _store.SetManualStop(resolved.Value.UserIdN, today, true);
         await _enforcer.ReconcileAsync(Config, today, localNow).ConfigureAwait(false);
 
-        var targetGuid = resolved.Value.UserGuid;
-        var sessions = _sessionManager.Sessions
-            .Where(s => s.UserId == targetGuid && s.NowPlayingItem is not null)
-            .ToList();
-
-        foreach (var s in sessions)
-        {
-            await _sessionManager.SendPlaystateCommand(
-                null,
-                s.Id,
-                new PlaystateRequest { Command = PlaystateCommand.Stop },
-                CancellationToken.None).ConfigureAwait(false);
-        }
-
-        return new { stopped = sessions.Count };
+        var stopped = await _terminator.StopAllSessionsAsync(resolved.Value.UserGuid).ConfigureAwait(false);
+        return new { stopped };
     }
 
     /// <summary>

@@ -26,7 +26,8 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
 
     private readonly ISessionManager _sessionManager;
     private readonly StateStore _store;
-    private readonly AccessScheduleEnforcer _enforcer;
+    private readonly HardBlockEnforcer _enforcer;
+    private readonly PlaybackTerminator _terminator;
     private readonly ILogger<WatchTimeTracker> _logger;
 
     private Timer? _maintenanceTimer;
@@ -36,17 +37,20 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
     /// </summary>
     /// <param name="sessionManager">Session manager.</param>
     /// <param name="store">State store.</param>
-    /// <param name="enforcer">Access-schedule hard enforcer.</param>
+    /// <param name="enforcer">Hard-block enforcer.</param>
+    /// <param name="terminator">Playback terminator.</param>
     /// <param name="logger">Logger.</param>
     public WatchTimeTracker(
         ISessionManager sessionManager,
         StateStore store,
-        AccessScheduleEnforcer enforcer,
+        HardBlockEnforcer enforcer,
+        PlaybackTerminator terminator,
         ILogger<WatchTimeTracker> logger)
     {
         _sessionManager = sessionManager;
         _store = store;
         _enforcer = enforcer;
+        _terminator = terminator;
         _logger = logger;
     }
 
@@ -262,9 +266,14 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
                         session.DeviceName,
                         session.SupportsRemoteControl,
                         session.Capabilities?.SupportsMediaControl);
+
+                    // Apply the hard block right away instead of waiting up to 15 s for the
+                    // next maintenance tick — on clients that ignore Stop, the block is the
+                    // only thing that actually ends playback.
+                    _ = _enforcer.ReconcileAsync(config, today, localNow);
                 }
 
-                _ = SendStopAsync(sessionId, session.Client, session.DeviceName);
+                _ = SendStopAsync(session);
             }
             else if (decision.Warn)
             {
@@ -277,27 +286,18 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
         }
     }
 
-    private async Task SendStopAsync(string sessionId, string? client, string? device)
+    private async Task SendStopAsync(SessionInfo session)
     {
-        // Each command is sent independently so a client that rejects one (e.g. no
-        // media-control support) doesn't prevent the others from being attempted.
-        var stopped = await TrySendPlaystateAsync(sessionId, PlaystateCommand.Stop, client, device)
-            .ConfigureAwait(false);
-
-        // Some clients honor Pause even when they ignore Stop; try it as a fallback so
-        // playback at least halts.
-        if (!stopped)
-        {
-            await TrySendPlaystateAsync(sessionId, PlaystateCommand.Pause, client, device)
-                .ConfigureAwait(false);
-        }
+        // Stop/Pause commands plus server-side stream teardown (transcode kill / live
+        // stream close) so playback ends even on clients that ignore the commands.
+        await _terminator.StopSessionAsync(session).ConfigureAwait(false);
 
         // Best-effort on-screen notice for clients that render it (web/mobile).
         try
         {
             await _sessionManager.SendMessageCommand(
                 null,
-                sessionId,
+                session.Id,
                 new MessageCommand
                 {
                     Header = "Time's up",
@@ -308,34 +308,7 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "KidsLimit: DisplayMessage to session {SessionId} failed.", sessionId);
-        }
-    }
-
-    private async Task<bool> TrySendPlaystateAsync(
-        string sessionId, PlaystateCommand command, string? client, string? device)
-    {
-        try
-        {
-            await _sessionManager.SendPlaystateCommand(
-                null,
-                sessionId,
-                new PlaystateRequest { Command = command },
-                CancellationToken.None).ConfigureAwait(false);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(
-                ex,
-                "KidsLimit: {Command} command was rejected by session {Session} " +
-                "(client='{Client}', device='{Device}'). This client likely ignores " +
-                "server-sent remote-control commands.",
-                command,
-                sessionId,
-                client,
-                device);
-            return false;
+            _logger.LogDebug(ex, "KidsLimit: DisplayMessage to session {SessionId} failed.", session.Id);
         }
     }
 

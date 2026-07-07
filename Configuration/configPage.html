@@ -61,18 +61,36 @@
                     <h3 class="sectionTitle">Hard enforcement</h3>
                     <label class="checkboxContainer">
                         <input is="emby-checkbox" type="checkbox" id="enforceViaAccessSchedule" />
-                        <span>Hard-block over-limit kids using Jellyfin's access schedule</span>
+                        <span>Hard-block kids at the server when they go over their daily/window limit</span>
                     </label>
                     <div class="fieldDescription">
                         Recommended if your client (e.g. Android TV) ignores the server's Stop command.
                         When a kid is over their <strong>daily or window</strong> limit, the plugin blocks
                         that user at the server so playback stops even on stubborn clients, and restores
                         access automatically when they're back under limit, granted bonus, or at midnight.
-                        Note: while over limit this blocks <em>all</em> Jellyfin access for that user, not
-                        just playback. Turn this off (and Save) before uninstalling the plugin to release
-                        any active blocks. The dashboard's <strong>Stop now</strong> button always uses this
-                        same hard block (until you press Allow again, grant bonus, or midnight), regardless
-                        of this setting.
+                        Turn this off (and Save) before uninstalling the plugin to release any active
+                        blocks. The dashboard's <strong>Stop now</strong> button always applies a hard
+                        block (until you press Allow again, grant bonus, or midnight), regardless of this
+                        setting — using the mode chosen below.
+                    </div>
+                    <div class="selectContainer" style="margin-top: 1em;">
+                        <label class="selectLabel" for="hardEnforcementMode">Hard-block mode</label>
+                        <select is="emby-select" id="hardEnforcementMode">
+                            <option value="AccessSchedule">Block all access (access schedule) — most forceful</option>
+                            <option value="DisablePlayback">Block playback only — kid can still browse</option>
+                        </select>
+                    </div>
+                    <div class="fieldDescription">
+                        <strong>Block all access</strong> flips the kid's native access schedule to "never
+                        allowed": every request is rejected, so even a stream that's already playing dies
+                        within seconds — but the kid is locked out of Jellyfin entirely (browsing too, and
+                        some clients drop to an error/login screen).
+                        <strong>Block playback only</strong> is gentler: it turns off the user's
+                        media-playback permission, so nothing new can start (including auto-play of the
+                        next episode) and the kid can still browse with a friendly "playback not allowed"
+                        error — but a client that ignores the Stop command may finish the episode it is
+                        currently direct-playing. Transcoded streams are torn down server-side in both
+                        modes.
                     </div>
                 </div>
 
@@ -300,6 +318,8 @@
                 page.querySelector('#eveningStart').value = minutesToTime(cfg.EveningStartMinutes || 1080);
                 page.querySelector('#bonusApiToken').value = cfg.BonusApiToken || '';
                 page.querySelector('#enforceViaAccessSchedule').checked = !!cfg.EnforceViaAccessSchedule;
+                page.querySelector('#hardEnforcementMode').value =
+                    cfg.HardEnforcementMode === 'DisablePlayback' ? 'DisablePlayback' : 'AccessSchedule';
 
                 renderPresets();
                 renderUsers();
@@ -315,6 +335,7 @@
                 cfg.EveningStartMinutes = timeToMinutes(page.querySelector('#eveningStart').value);
                 cfg.BonusApiToken = page.querySelector('#bonusApiToken').value.trim();
                 cfg.EnforceViaAccessSchedule = page.querySelector('#enforceViaAccessSchedule').checked;
+                cfg.HardEnforcementMode = page.querySelector('#hardEnforcementMode').value;
                 cfg.Presets = presets;
                 cfg.Users = collectUsers();
                 ApiClient.updatePluginConfiguration(pluginId, cfg).then(function (r) {

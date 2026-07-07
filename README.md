@@ -37,23 +37,40 @@ export JELLYFIN_TOKEN="<admin API key from Dashboard → API Keys>"
   (see `REQUIREMENTS.md` §2.1 / §12). Use **Hard enforcement** (below) instead.
 
 The plugin also re-sends Stop on every progress tick (~10 s) while over limit, so
-a client that ignores a single Stop still gets stopped repeatedly.
+a client that ignores a single Stop still gets stopped repeatedly. In addition,
+whenever a session is over limit (or a parent presses **Stop now**) the plugin
+**tears the stream down server-side**: the session's transcoding job is killed
+and any live stream is closed, so transcoded/remuxed (HLS) playback stalls and
+stops within seconds even on clients that ignore every command — no player
+restart needed. The one case the server cannot interrupt mid-stream is a
+**direct-played** static file on a client that ignores Stop; that's what hard
+enforcement is for.
 
 ### Hard enforcement (for clients that ignore Stop, e.g. Android TV)
 
-If your TV swallows the Stop command, enable **Hard-block over-limit kids using
-Jellyfin's access schedule** in plugin settings (off by default). When a kid is
-over their **daily or window** limit, the plugin flips that user's native
-Jellyfin **access schedule** to blocked. Jellyfin enforces access schedules on
-the server for every request, so playback stops even on clients that ignore
-remote-control commands — no client cooperation required. Access is restored
-automatically when the kid is back under limit, is granted bonus, or at local
-midnight.
+If your TV swallows the Stop command, enable **Hard-block kids at the server**
+in plugin settings (off by default). When a kid is over their **daily or
+window** limit, the plugin blocks that user at the server, in one of two
+selectable modes:
 
-Caveats: while over limit this blocks **all** Jellyfin access for that user (not
-just playback), and any parent-set access schedule is saved and restored around
-our block. **Turn the option off and Save before uninstalling the plugin** so no
-kid is left locked out.
+- **Block all access (access schedule)** — flips the user's native Jellyfin
+  access schedule to "never allowed". Jellyfin validates the schedule on every
+  request, so even an already-running stream dies at its next range/segment
+  request. Most forceful, but while blocked the kid is locked out of Jellyfin
+  entirely (browsing too, and some clients drop to an error/login screen).
+- **Block playback only** — turns off the user's *media playback* permission
+  instead. Nothing new can start (including auto-play of the next episode) and
+  the kid can still browse the library, getting a normal "playback not allowed"
+  error when they press play. Gentler, but a client that ignores Stop may finish
+  the item it is currently direct-playing before the block bites.
+
+The block is applied immediately when a limit is crossed (not just on the next
+maintenance tick), and is released automatically when the kid is back under
+limit, is granted bonus, or at local midnight. Whatever the plugin changes
+(schedules and/or the playback permission) is saved first and restored verbatim
+on release. **Turn the option off and Save before uninstalling the plugin** so
+no kid is left locked out. The dashboard's **Stop now** button always applies a
+hard block using the selected mode, regardless of the on/off setting.
 
 ---
 
@@ -97,19 +114,19 @@ just show up as updates in the catalog.
 
 ### Cutting a release (maintainer)
 
-Push a tag matching the version in `build.yaml` / the `.csproj`, prefixed
-with `v` (e.g. `v1.0.0.0`):
+Releases are cut **automatically from `main`**: bump `version:` in `build.yaml`
+(and the `<Version>` properties in the `.csproj` to keep them in sync), merge to
+`main`, and the `.github/workflows/release.yml` workflow does the rest — it sees
+that no `v<version>` tag exists yet, builds the DLL, zips it, creates the tag
+and the GitHub Release with the zip attached, and commits an updated
+`manifest.json` (repository index) back to `main`. Pushes to `main` that don't
+change the version are no-ops for the release workflow.
 
-```bash
-git tag v1.0.0.0
-git push origin v1.0.0.0
-```
-
-The `.github/workflows/release.yml` workflow then builds the DLL, zips it,
-publishes a GitHub Release with the zip attached, and commits an updated
-`manifest.json` (repository index) back to `main` — no manual steps needed.
+Pushing a `v*` tag by hand still works and releases exactly that tag, as does
+running the workflow manually via *Actions → Release Plugin → Run workflow*
+(leave the tag input empty to release the current `build.yaml` version).
 `build.yaml` is the single source of truth for the plugin's name, GUID,
-description, and target ABI used in that manifest.
+description, and target ABI used in the manifest.
 
 ## Configuration
 
@@ -136,9 +153,10 @@ directly:
 
 Per kid it shows today's used/remaining, current session, active preset,
 per-window usage, a 7-day average, and **+10 / +30 / +60 / custom bonus** and
-**Stop now** buttons. **Stop now** applies a hard block (via the native access
-schedule) so playback stops even on clients that ignore the Stop command, and
-holds until you press **Allow again**, grant bonus, or local midnight — the card
+**Stop now** buttons. **Stop now** stops the kid's sessions (commands + server-
+side stream teardown) and applies a hard block using the configured hard-block
+mode, so playback stops even on clients that ignore the Stop command, and holds
+until you press **Allow again**, grant bonus, or local midnight — the card
 flips to an **Allow again** button while a kid is stopped.
 
 ### Direct access (no Plugins drill-down)
