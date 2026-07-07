@@ -1,14 +1,20 @@
 name: Release Plugin
 
+# A release is cut automatically whenever the version in build.yaml changes on main:
+# every push to main checks whether the tag v<build.yaml version> already exists and,
+# if not, builds, tags, and publishes the release, then commits the updated
+# manifest.json back to main. (That manifest commit re-triggers this workflow, which
+# then no-ops because the tag exists.) Pushing a v* tag by hand and the manual
+# workflow_dispatch path both still work.
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [ main ]
+    tags: [ 'v*' ]
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to release (e.g. v1.0.0.0), must already exist'
-        required: true
+        description: 'Tag to release (e.g. v1.0.0.0). Leave empty to release the version in build.yaml.'
+        required: false
 
 permissions:
   contents: write
@@ -23,23 +29,44 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
 
+      - name: Determine version
+        id: ver
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            TAG="${{ github.ref_name }}"
+            SHOULD=true
+          elif [[ -n "${{ github.event.inputs.tag }}" ]]; then
+            TAG="${{ github.event.inputs.tag }}"
+            SHOULD=true
+          else
+            # Push to main (or dispatch without a tag): release the build.yaml version,
+            # but only if it hasn't been released yet.
+            VERSION=$(grep -E '^version:' build.yaml | sed -E 's/version:[[:space:]]*"?([^"]+)"?/\1/')
+            TAG="v$VERSION"
+            if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+              echo "Tag $TAG already exists — nothing to release."
+              SHOULD=false
+            else
+              SHOULD=true
+            fi
+          fi
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "should=$SHOULD" >> "$GITHUB_OUTPUT"
+
       - name: Setup .NET
+        if: steps.ver.outputs.should == 'true'
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
 
-      - name: Determine version
-        id: ver
-        run: |
-          TAG="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}"
-          VERSION="${TAG#v}"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
       - name: Restore
+        if: steps.ver.outputs.should == 'true'
         run: dotnet restore Jellyfin.Plugin.KidsLimit.csproj
 
       - name: Build
+        if: steps.ver.outputs.should == 'true'
         run: |
           dotnet build Jellyfin.Plugin.KidsLimit.csproj -c Release --no-restore \
             -p:Version=${{ steps.ver.outputs.version }} \
@@ -47,6 +74,7 @@ jobs:
             -p:FileVersion=${{ steps.ver.outputs.version }}
 
       - name: Package zip
+        if: steps.ver.outputs.should == 'true'
         id: pkg
         run: |
           ZIP_NAME="jellyfin-kids-limit-plugin_${{ steps.ver.outputs.version }}.zip"
@@ -58,17 +86,23 @@ jobs:
           echo "checksum=$CHECKSUM" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
+        if: steps.ver.outputs.should == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
+          # Pin the tag to the exact commit that was built (only used when the tag
+          # doesn't exist yet, i.e. auto-releases from main).
+          target_commitish: ${{ github.sha }}
           files: dist/${{ steps.pkg.outputs.zip_name }}
           generate_release_notes: true
 
       - name: Update repository manifest on main
+        if: steps.ver.outputs.should == 'true'
         run: |
           pip install --quiet pyyaml
           git fetch origin main
           git checkout main
+          git reset --hard origin/main
           python3 scripts/update_manifest.py \
             --manifest manifest.json \
             --build-yaml build.yaml \

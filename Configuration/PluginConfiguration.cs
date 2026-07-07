@@ -11,6 +11,12 @@ namespace Jellyfin.Plugin.KidsLimit.Configuration;
 /// </summary>
 public class PluginConfiguration : BasePluginConfiguration
 {
+    /// <summary>Hard-block mode: drive the user's native access schedule (blocks all access).</summary>
+    public const string ModeAccessSchedule = "AccessSchedule";
+
+    /// <summary>Hard-block mode: disable the user's media-playback permission (browsing still works).</summary>
+    public const string ModeDisablePlayback = "DisablePlayback";
+
     /// <summary>
     /// Initializes a new instance of the <see cref="PluginConfiguration"/> class
     /// with the shipped defaults described in the requirements.
@@ -21,6 +27,7 @@ public class PluginConfiguration : BasePluginConfiguration
         EveningStartMinutes = 18 * 60; // 18:00
         BonusApiToken = string.Empty;
         EnforceViaAccessSchedule = false;
+        HardEnforcementMode = ModeAccessSchedule;
         Presets = DefaultPresets();
         Users = new List<UserLimitConfig>();
     }
@@ -52,6 +59,28 @@ public class PluginConfiguration : BasePluginConfiguration
     /// that user while over limit, not just playback.
     /// </summary>
     public bool EnforceViaAccessSchedule { get; set; }
+
+    /// <summary>
+    /// Gets or sets how hard blocks are applied (both for automatic over-limit blocking
+    /// and the parent "Stop now" hold). <see cref="ModeAccessSchedule"/> (default) blocks
+    /// all Jellyfin access for the user via their native access schedule — the most
+    /// forceful option, and the only one that also interrupts an in-flight direct-play
+    /// stream on clients that ignore the Stop command. <see cref="ModeDisablePlayback"/>
+    /// only turns off the user's media-playback permission: nothing new can start
+    /// (including auto-play of the next episode) but the kid can still browse, which is
+    /// gentler; a stubborn client may finish the item it is currently direct-playing.
+    /// </summary>
+    public string HardEnforcementMode { get; set; }
+
+    /// <summary>
+    /// Gets the effective hard-enforcement mode, mapping unknown/legacy values (configs
+    /// saved before this setting existed deserialize it as null) to the default.
+    /// </summary>
+    [System.Xml.Serialization.XmlIgnore]
+    public string ResolvedHardEnforcementMode =>
+        string.Equals(HardEnforcementMode, ModeDisablePlayback, StringComparison.OrdinalIgnoreCase)
+            ? ModeDisablePlayback
+            : ModeAccessSchedule;
 
     /// <summary>
     /// Gets or sets the reusable named limit presets.
