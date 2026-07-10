@@ -174,18 +174,30 @@ public sealed class HardBlockEnforcer
             return false;
         }
 
+        // A hard block locks the user out of Jellyfin entirely (AccessSchedule mode) or
+        // disables playback (DisablePlayback mode), so it must only fire once the kid has
+        // actually *consumed* their allowance by watching. The usage > 0 guards are what
+        // make a zero cap safe: a cap of 0 (e.g. School Day's morning window, or a 0 daily
+        // cap) means "no watching in this scope", which is enforced at playback time by the
+        // tracker when the kid presses play — it must NOT be read as "already over" the
+        // instant the window opens, or the account is hard-blocked (and, in AccessSchedule
+        // mode, cannot even log in) for the whole window despite zero watch time.
+        //
         // Daily bonus applies to both the daily and the active-window budgets (§5.1). The
         // session cap is deliberately excluded: a session-cap breach is a "take a break"
         // signal, not a "you're done for the day", so it shouldn't lock the whole account.
         if (preset.DailyCapMinutes is int daily &&
+            state.SecondsWatchedTotal > 0 &&
             state.SecondsWatchedTotal >= (long)daily * 60 + state.DailyBonusSeconds)
         {
             return true;
         }
 
         var windowCap = LimitCalculator.WindowCap(preset, window);
+        var windowSeconds = state.GetWindowSeconds(window);
         if (windowCap is int wc &&
-            state.GetWindowSeconds(window) >= (long)wc * 60 + state.DailyBonusSeconds)
+            windowSeconds > 0 &&
+            windowSeconds >= (long)wc * 60 + state.DailyBonusSeconds)
         {
             return true;
         }
