@@ -83,6 +83,25 @@
                         Leave blank to disable the REST API entirely. Example:
                         <code>POST /KidsLimit/bonus?user=NAME&amp;minutes=30&amp;token=SECRET</code>
                     </div>
+                    <br />
+                    <button is="emby-button" type="button" id="btnCopyParentUrl" class="raised block">
+                        <span>Copy parent dashboard URL</span>
+                    </button>
+                    <div class="fieldDescription">
+                        The standalone parent dashboard (<code>/KidsLimit/parent?token=…</code>) has the
+                        same controls as the admin dashboard but works from any phone browser with just
+                        this token — no Jellyfin login. Bookmark it or add it to the home screen.
+                    </div>
+                    <div class="inputContainer" style="margin-top:1em;">
+                        <label class="inputLabel inputLabelUnfocused" for="publicBaseUrl">Public base URL (optional)</label>
+                        <input is="emby-input" type="text" id="publicBaseUrl" placeholder="https://jellyfin.example.com" />
+                    </div>
+                    <div class="fieldDescription">
+                        Used for the one-tap approve/decline links inside chore-claim notifications
+                        (and the copied page URLs). Leave blank to use the address each request came
+                        in on — fine when your phone reaches Jellyfin on the same address the kid's
+                        device uses.
+                    </div>
                 </div>
 
                 <div class="verticalSection">
@@ -697,6 +716,7 @@
                 page.querySelector('#middayStart').value = minutesToTime(cfg.MiddayStartMinutes || 720);
                 page.querySelector('#eveningStart').value = minutesToTime(cfg.EveningStartMinutes || 1080);
                 page.querySelector('#bonusApiToken').value = cfg.BonusApiToken || '';
+                page.querySelector('#publicBaseUrl').value = cfg.PublicBaseUrl || '';
                 page.querySelector('#enforceViaAccessSchedule').checked = !!cfg.EnforceViaAccessSchedule;
                 page.querySelector('#hardEnforcementMode').value =
                     cfg.HardEnforcementMode === 'DisablePlayback' ? 'DisablePlayback' : 'AccessSchedule';
@@ -728,6 +748,7 @@
                 cfg.MiddayStartMinutes = timeToMinutes(page.querySelector('#middayStart').value);
                 cfg.EveningStartMinutes = timeToMinutes(page.querySelector('#eveningStart').value);
                 cfg.BonusApiToken = page.querySelector('#bonusApiToken').value.trim();
+                cfg.PublicBaseUrl = page.querySelector('#publicBaseUrl').value.trim();
                 cfg.EnforceViaAccessSchedule = page.querySelector('#enforceViaAccessSchedule').checked;
                 cfg.HardEnforcementMode = page.querySelector('#hardEnforcementMode').value;
                 cfg.Presets = presets;
@@ -778,6 +799,21 @@
                 var token = Array.prototype.map.call(arr, function (b) {
                     return ('0' + b.toString(16)).slice(-2); }).join('');
                 page.querySelector('#bonusApiToken').value = token;
+            });
+
+            page.querySelector('#btnCopyParentUrl').addEventListener('click', function () {
+                var tok = page.querySelector('#bonusApiToken').value.trim();
+                if (!tok) {
+                    Dashboard.alert('Set (and save) the API token first.');
+                    return;
+                }
+                // Prefer the configured public base URL so the link works away from home too.
+                var base = page.querySelector('#publicBaseUrl').value.trim();
+                var url = base
+                    ? base.replace(/\/+$/, '') + '/KidsLimit/parent?token=' + encodeURIComponent(tok)
+                    : ApiClient.getUrl('KidsLimit/parent') + '?token=' + encodeURIComponent(tok);
+                if (navigator.clipboard) { navigator.clipboard.writeText(url).catch(function () {}); }
+                Dashboard.alert('Parent dashboard URL copied:\n' + url);
             });
 
             page.querySelector('#btnAddChore').addEventListener('click', function () {

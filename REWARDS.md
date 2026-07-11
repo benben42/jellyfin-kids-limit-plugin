@@ -28,6 +28,21 @@ remote (D-pad). Everything is pictures, emoji, counts and sounds.
   only anti-hoarding tool.
 - **Daily redeem cap** (`MaxRedeemCoinsPerDay`, default 6 = 30 min): a big bank
   cannot be blown in one sitting. Tracked per local day in the wallet.
+- **Resume-aware pricing**: a partly-watched movie costs only its *remaining*
+  runtime ("20 minutes to finish" = 4 coins, not the full 18) and redeeming it
+  resumes playback from the saved position. The kid page shows a progress bar on
+  the poster. Series posters keep the median-episode price (episodes are cheap
+  and there is no single "resume the series" position).
+- **Partial redeem**: picking a poster that costs more than what is redeemable
+  today spends what *is* redeemable and grants that much time — so the daily cap
+  means "N coins of watching per day", not "only short titles ever". A long
+  movie is watched in daily installments; each day the poster shows the
+  remaining-time price. The midnight refund still returns unwatched coins.
+- **Two lock reasons** on the kid page, told apart in pictures: 🔒 on a coin =
+  the jar is empty (go earn coins); 🌙 = coins are banked but today's redeem
+  allowance is spent (come back tomorrow). Posters are never permanently locked.
+- **Plain extra time**: ⏳ tiles (1 or 3 coins) redeem coins into bonus time with
+  no title attached — for finishing whatever is already playing on the TV.
 - **Redeemed time behaves like bonus time** (§5.1): it lifts daily, session and
   the currently-active window budget. The evening window boundary itself is not
   moved — the plugin never had a hard bedtime cutoff, only window caps.
@@ -56,6 +71,10 @@ remote (D-pad). Everything is pictures, emoji, counts and sounds.
      sound feedback. No reading required.
 2. **Parent dashboard** (existing admin page) — per-kid wallet: balance, pending
    claims with ✓/✗, one-tap earn buttons per chore, custom adjust, manual redeem.
+   Also available as a **standalone page**: `GET /KidsLimit/parent?token=<BonusApiToken>`
+   serves the same controls from any phone browser with no Jellyfin admin login
+   (config comes from `GET /KidsLimit/parent/meta`). Copy the URL from settings
+   or the admin dashboard's "📱 Phone page" button and bookmark it.
 3. **Plugin settings** — "Rewards" tab: coin value, bank cap, daily redeem cap,
    ntfy topic URL, chores editor, reference-title picker (library search), and a
    per-kid token + ready-to-copy kid page URL.
@@ -75,7 +94,13 @@ remote (D-pad). Everything is pictures, emoji, counts and sounds.
 
 Chore claims fan out to a configurable list of `NotificationTargets`
 ("Emma claims Dishwasher 🪙3"), so the parent's phone pings while the kid
-waits; approval happens on the dashboard. Supported providers: **ntfy,
+waits. Claim notifications carry **one-tap ✅ Approve / ❌ Decline links**:
+Pushover gets them as tappable HTML links in the message body, ntfy as real
+notification action buttons. The links hit the anonymous
+`GET /KidsLimit/claim/act` endpoint, authorized by a per-claim random secret
+that dies once the claim is handled. Link host comes from the `PublicBaseUrl`
+setting, falling back to the address the claim request came in on. Approval
+also still works on the dashboard. Supported providers: **ntfy,
 Pushover, Gotify, Discord and Slack incoming webhooks, Telegram bots, an
 Apprise API server** (which relays to 100+ further services), and a **generic
 JSON webhook** (`{"title","message"}`). A test button in settings

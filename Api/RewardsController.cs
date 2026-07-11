@@ -336,6 +336,121 @@ public class RewardsController : ControllerBase
         return new { Succeeded = succeeded, Attempted = attempted };
     }
 
+    /// <summary>
+    /// One-tap approve/decline landing endpoint for the links embedded in chore-claim
+    /// notifications (Pushover/ntfy). Anonymous by design — the per-claim secret in
+    /// <c>key</c> authorizes exactly one pending claim and dies with it — so it works
+    /// straight from the phone's notification shade without a Jellyfin login.
+    /// </summary>
+    /// <param name="user">User id (Guid "N") the claim belongs to.</param>
+    /// <param name="claim">The claim id.</param>
+    /// <param name="key">The per-claim action secret.</param>
+    /// <param name="op">"approve" or "decline".</param>
+    /// <returns>A small human-readable confirmation page.</returns>
+    [HttpGet("claim/act")]
+    public ActionResult ClaimAction(
+        [FromQuery] string user,
+        [FromQuery] string claim,
+        [FromQuery] string key,
+        [FromQuery] string op)
+    {
+        var guid = ResolveUserGuid(user);
+        if (guid is null)
+        {
+            return ActionResultPage("🤷", "Unknown link.");
+        }
+
+        var approve = string.Equals(op, "approve", StringComparison.OrdinalIgnoreCase);
+        var handled = _rewards.ActOnClaim(Config, IdN(guid.Value), claim, key, approve);
+        if (handled is null)
+        {
+            return ActionResultPage("🤷", "This claim was already handled (or the link is invalid).");
+        }
+
+        var kidName = _userManager.GetUserById(guid.Value)?.Username ?? "kid";
+        return approve
+            ? ActionResultPage("✅", $"Approved — {kidName} gets 🪙{handled.Coins} for “{handled.ChoreName}”.")
+            : ActionResultPage("❌", $"Declined — “{handled.ChoreName}” ({kidName}).");
+    }
+
+    /// <summary>
+    /// Serves the standalone parent dashboard — same controls as the Jellyfin admin
+    /// dashboard page, but reachable from any phone/browser with just the parent token
+    /// (no Jellyfin admin login): <c>/KidsLimit/parent?token=&lt;BonusApiToken&gt;</c>.
+    /// </summary>
+    /// <param name="token">Parent shared secret.</param>
+    /// <returns>The HTML page.</returns>
+    [HttpGet("parent")]
+    public ActionResult ParentPage([FromQuery] string? token = null)
+    {
+        if (!ParentAuthorized(token))
+        {
+            return Content(
+                "<!DOCTYPE html><html><body style=\"background:#111;color:#eee;font-family:sans-serif;" +
+                "display:flex;align-items:center;justify-content:center;height:100vh;font-size:3em;\">" +
+                "🔒</body></html>",
+                "text/html");
+        }
+
+        using var stream = GetType().Assembly.GetManifestResourceStream("Jellyfin.Plugin.KidsLimit.Web.parent.html");
+        if (stream is null)
+        {
+            return NotFound();
+        }
+
+        using var reader = new StreamReader(stream);
+        return Content(reader.ReadToEnd(), "text/html");
+    }
+
+    /// <summary>
+    /// Config snapshot the standalone parent page needs (it has no Jellyfin session, so it
+    /// cannot call getPluginConfiguration like the admin dashboard does): chores for the
+    /// one-tap earn buttons, per-kid page links, coin settings.
+    /// </summary>
+    /// <param name="token">Parent shared secret.</param>
+    /// <returns>Chores, users and coin settings.</returns>
+    [HttpGet("parent/meta")]
+    [Produces("application/json")]
+    public ActionResult<object> ParentMeta([FromQuery] string? token = null)
+    {
+        if (!ParentAuthorized(token))
+        {
+            return Unauthorized();
+        }
+
+        var config = Config;
+        return new
+        {
+            CoinMinutes = Math.Max(1, config.CoinMinutes),
+            config.MaxRedeemCoinsPerDay,
+            config.BankCapCoins,
+            Chores = config.Chores
+                .Where(c => c.Enabled)
+                .Select(c => new { c.Id, c.Name, c.Icon, c.Coins })
+                .ToList(),
+            Users = config.Users
+                .Where(u => u.Enabled && Guid.TryParse(u.UserId, out _))
+                .Select(u => new
+                {
+                    UserId = IdN(Guid.Parse(u.UserId)),
+                    Name = Guid.TryParse(u.UserId, out var g) ? _userManager.GetUserById(g)?.Username : null,
+                    KidUrl = string.IsNullOrEmpty(u.KidToken) ? null : "kid?token=" + Uri.EscapeDataString(u.KidToken),
+                })
+                .ToList(),
+        };
+    }
+
+    private ContentResult ActionResultPage(string emoji, string text) =>
+        Content(
+            "<!DOCTYPE html><html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">" +
+            "<title>Kids Watch-Time</title></head>" +
+            "<body style=\"background:#14172e;color:#eee;font-family:sans-serif;display:flex;flex-direction:column;" +
+            "align-items:center;justify-content:center;min-height:100vh;margin:0;gap:1em;text-align:center;padding:1em;\">" +
+            "<div style=\"font-size:5em;\">" + emoji + "</div>" +
+            "<div style=\"font-size:1.3em;max-width:30em;\">" + System.Net.WebUtility.HtmlEncode(text) + "</div>" +
+            "</body></html>",
+            "text/html");
+
     // ------------------------------------------------------------------ kid API
 
     /// <summary>Serves the kid TV page. Data calls carry the token from the query string.</summary>
@@ -459,17 +574,49 @@ public class RewardsController : ControllerBase
             return Unauthorized();
         }
 
-        var claim = _rewards.Claim(Config, IdN(kid.Value.Guid), kid.Value.Name, choreId);
+        var config = Config;
+        var claim = _rewards.Claim(config, IdN(kid.Value.Guid), kid.Value.Name, choreId, PublicBase(config));
         return new { Ok = claim is not null };
     }
 
     /// <summary>
-    /// Kid redeems coins to watch a reference title: debits its coin cost, grants the
-    /// bonus time and (best effort) starts playback on the kid's active session.
+    /// Kid redeems coins as plain extra watch time — no title attached. Powers the ⏳
+    /// "more time" tiles on the kid page, e.g. to keep watching whatever is already
+    /// playing on the TV.
     /// </summary>
-    /// <param name="itemId">The reference title item id.</param>
+    /// <param name="coins">Coins to spend (validated against balance and the daily cap).</param>
     /// <param name="token">The per-user kid token.</param>
-    /// <returns>The outcome: error, coins left, whether playback started.</returns>
+    /// <returns>The outcome: error, coins left, seconds granted.</returns>
+    [HttpPost("kid/time")]
+    [Produces("application/json")]
+    public ActionResult<object> KidExtraTime([FromQuery] int coins, [FromQuery] string? token = null)
+    {
+        var kid = ResolveKid(token);
+        if (kid is null)
+        {
+            return Unauthorized();
+        }
+
+        if (coins <= 0)
+        {
+            return BadRequest("coins must be positive.");
+        }
+
+        var outcome = _rewards.Redeem(Config, IdN(kid.Value.Guid), coins, "Extra time");
+        return new { outcome.Error, outcome.CoinBalance, outcome.SecondsGranted };
+    }
+
+    /// <summary>
+    /// Kid redeems coins to watch a title: debits its coin cost, grants the bonus time
+    /// and (best effort) starts playback on the kid's active session. Pricing is
+    /// resume-aware (a half-watched movie costs only what's left, and playback resumes
+    /// there), and the redeem may be PARTIAL: when the price exceeds what's redeemable
+    /// today, whatever IS redeemable is spent and that much time granted — the daily cap
+    /// then means "N coins of watching per day", not "only short titles ever".
+    /// </summary>
+    /// <param name="itemId">The library item id.</param>
+    /// <param name="token">The per-user kid token.</param>
+    /// <returns>The outcome: error, coins left, whether playback started, partial flag.</returns>
     [HttpPost("kid/redeem")]
     [Produces("application/json")]
     public async Task<ActionResult<object>> KidRedeem([FromQuery] string itemId, [FromQuery] string? token = null)
@@ -495,20 +642,38 @@ public class RewardsController : ControllerBase
             return NotFound("Not available.");
         }
 
-        var title = _rewards.BuildTitle(config, item);
+        var title = _rewards.BuildTitle(config, item, user);
         if (title is null)
         {
             return NotFound("No runtime.");
         }
 
-        var outcome = _rewards.Redeem(config, IdN(kid.Value.Guid), title.CoinCost, title.Name);
+        var userId = IdN(kid.Value.Guid);
+        var charge = Math.Min(title.CoinCost, RedeemableNow(config, userId));
+        if (charge <= 0)
+        {
+            // Distinguish the two lock reasons for the kid page: out of coins vs
+            // out of today's redeem allowance.
+            var balance = _wallets.GetSnapshot(userId).CoinBalance;
+            return new { Error = balance <= 0 ? "balance" : "dailycap", CoinBalance = balance, Played = false };
+        }
+
+        var outcome = _rewards.Redeem(config, userId, charge, title.Name);
         if (outcome.Error is not null)
         {
             return new { outcome.Error, outcome.CoinBalance, Played = false };
         }
 
-        var played = await _rewards.TryPlayAsync(kid.Value.Guid, title.ItemId).ConfigureAwait(false);
-        return new { Error = (string?)null, outcome.CoinBalance, outcome.SecondsGranted, Played = played };
+        var played = await _rewards.TryPlayAsync(kid.Value.Guid, title.ItemId, title.ResumeTicks).ConfigureAwait(false);
+        return new
+        {
+            Error = (string?)null,
+            outcome.CoinBalance,
+            outcome.SecondsGranted,
+            outcome.CoinsSpent,
+            Partial = charge < title.CoinCost,
+            Played = played,
+        };
     }
 
     /// <summary>
@@ -595,7 +760,7 @@ public class RewardsController : ControllerBase
 
         var result = _libraryManager.GetItemsResult(query);
         var items = result.Items
-            .Select(item => _rewards.BuildTitle(config, item))
+            .Select(item => _rewards.BuildTitle(config, item, user))
             .Where(t => t is not null)
             .Select(t => (object)new
             {
@@ -604,11 +769,37 @@ public class RewardsController : ControllerBase
                 t.IsSeries,
                 t.RuntimeMinutes,
                 t.CoinCost,
+                t.FullCoinCost,
+                t.RemainingMinutes,
+                t.InProgress,
+                t.ProgressPct,
             })
             .ToList();
 
         return (items, result.TotalRecordCount);
     }
+
+    /// <summary>Coins the kid may still redeem today: bounded by balance and the daily cap.</summary>
+    private int RedeemableNow(PluginConfiguration config, string userId)
+    {
+        var wallet = _wallets.GetSnapshot(userId);
+        var today = LimitCalculator.DateKey(DateTime.Now);
+        var redeemedToday = string.Equals(wallet.RedeemDate, today, StringComparison.Ordinal)
+            ? wallet.CoinsRedeemedToday
+            : 0;
+        return config.MaxRedeemCoinsPerDay > 0
+            ? Math.Min(wallet.CoinBalance, Math.Max(0, config.MaxRedeemCoinsPerDay - redeemedToday))
+            : wallet.CoinBalance;
+    }
+
+    /// <summary>
+    /// Base URL for links that must work from the parent's phone (notification actions).
+    /// The configured public URL wins; otherwise fall back to how this request came in.
+    /// </summary>
+    private string PublicBase(PluginConfiguration config) =>
+        string.IsNullOrWhiteSpace(config.PublicBaseUrl)
+            ? Request.Scheme + "://" + Request.Host + Request.PathBase
+            : config.PublicBaseUrl.Trim();
 
     private bool ParentAuthorized(string? token)
     {

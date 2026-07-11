@@ -40,6 +40,7 @@ public sealed class RewardsService
     private readonly StateStore _store;
     private readonly ISessionManager _sessionManager;
     private readonly ILibraryManager _libraryManager;
+    private readonly IUserDataManager _userDataManager;
     private readonly HardBlockEnforcer _enforcer;
     private readonly NotificationService _notifications;
     private readonly ILogger<RewardsService> _logger;
@@ -51,6 +52,7 @@ public sealed class RewardsService
     /// <param name="store">Daily state store.</param>
     /// <param name="sessionManager">Session manager.</param>
     /// <param name="libraryManager">Library manager.</param>
+    /// <param name="userDataManager">User data manager (playback positions for resume pricing).</param>
     /// <param name="enforcer">Hard-block enforcer.</param>
     /// <param name="notifications">Push-notification fan-out.</param>
     /// <param name="logger">Logger.</param>
@@ -59,6 +61,7 @@ public sealed class RewardsService
         StateStore store,
         ISessionManager sessionManager,
         ILibraryManager libraryManager,
+        IUserDataManager userDataManager,
         HardBlockEnforcer enforcer,
         NotificationService notifications,
         ILogger<RewardsService> logger)
@@ -67,6 +70,7 @@ public sealed class RewardsService
         _store = store;
         _sessionManager = sessionManager;
         _libraryManager = libraryManager;
+        _userDataManager = userDataManager;
         _enforcer = enforcer;
         _notifications = notifications;
         _logger = logger;
@@ -144,8 +148,17 @@ public sealed class RewardsService
     /// <param name="userId">User id (Guid "N").</param>
     /// <param name="userName">User display name (for the notification).</param>
     /// <param name="choreId">The chore being claimed.</param>
+    /// <param name="actionBaseUrl">
+    /// Server base URL ("https://host[/path]") used to build one-tap approve/decline links
+    /// into the notification; null/empty sends a plain notification.
+    /// </param>
     /// <returns>The new pending claim, or null when the claim is not allowed.</returns>
-    public PendingClaim? Claim(PluginConfiguration config, string userId, string userName, string choreId)
+    public PendingClaim? Claim(
+        PluginConfiguration config,
+        string userId,
+        string userName,
+        string choreId,
+        string? actionBaseUrl = null)
     {
         var chore = config.Chores.FirstOrDefault(c =>
             c.Enabled && string.Equals(c.Id, choreId, StringComparison.Ordinal));
@@ -172,19 +185,71 @@ public sealed class RewardsService
                 Coins = chore.Coins,
                 ClaimedAtUtc = DateTime.UtcNow,
                 Date = today,
+                ActionKey = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture),
             };
             w.PendingClaims.Add(claim);
         });
 
         if (claim is not null)
         {
+            NotificationAction[]? actions = null;
+            var baseUrl = actionBaseUrl?.TrimEnd('/');
+            if (!string.IsNullOrEmpty(baseUrl))
+            {
+                var query = "user=" + userId + "&claim=" + claim.Id + "&key=" + claim.ActionKey;
+                actions = new[]
+                {
+                    new NotificationAction("✅ Approve", baseUrl + "/KidsLimit/claim/act?op=approve&" + query),
+                    new NotificationAction("❌ Decline", baseUrl + "/KidsLimit/claim/act?op=decline&" + query),
+                };
+            }
+
             _notifications.Send(
                 config,
                 $"{userName}: {chore.Name}",
-                $"Claims {chore.Coins} coin(s) — approve on the dashboard.");
+                $"Claims {chore.Coins} coin(s) — approve on the dashboard.",
+                actions);
         }
 
         return claim;
+    }
+
+    /// <summary>
+    /// Resolves a one-tap notification action: approves or declines the pending claim
+    /// whose <see cref="PendingClaim.ActionKey"/> matches. Idempotent — a second tap on
+    /// an already-handled claim reports "gone".
+    /// </summary>
+    /// <param name="config">Plugin config.</param>
+    /// <param name="userId">User id (Guid "N").</param>
+    /// <param name="claimId">The claim id from the link.</param>
+    /// <param name="key">The action key from the link.</param>
+    /// <param name="approve">True to approve, false to decline.</param>
+    /// <returns>The handled claim, or null when it is unknown/already handled/key mismatch.</returns>
+    public PendingClaim? ActOnClaim(PluginConfiguration config, string userId, string claimId, string key, bool approve)
+    {
+        if (string.IsNullOrEmpty(claimId) || string.IsNullOrEmpty(key))
+        {
+            return null;
+        }
+
+        PendingClaim? claim = null;
+        _wallets.Mutate(userId, w =>
+        {
+            claim = w.PendingClaims.FirstOrDefault(c =>
+                string.Equals(c.Id, claimId, StringComparison.Ordinal) &&
+                !string.IsNullOrEmpty(c.ActionKey) &&
+                string.Equals(c.ActionKey, key, StringComparison.Ordinal));
+        });
+
+        if (claim is null)
+        {
+            return null;
+        }
+
+        var handled = approve
+            ? ApproveClaim(config, userId, claim.Id)
+            : RejectClaim(userId, claim.Id);
+        return handled ? claim : null;
     }
 
     /// <summary>Approves a pending claim, crediting its coins.</summary>
@@ -391,18 +456,25 @@ public sealed class RewardsService
         }
 
         var item = _libraryManager.GetItemById(guid);
-        return item is null ? null : BuildTitle(config, item);
+        return item is null ? null : BuildTitle(config, item, null);
     }
 
     /// <summary>
     /// Builds a kid-page poster entry (name + coin cost) for an already-resolved library
     /// item. For a series the cost is the median episode runtime. Returns null when the
     /// item has no usable runtime (so it can't be priced/played).
+    /// When a user is supplied and the item is partly watched, the price is what it costs
+    /// to FINISH it: the remaining runtime, not the whole movie — so "20 more minutes"
+    /// is 4 coins, not 18, and fits inside the daily redeem cap.
     /// </summary>
     /// <param name="config">Plugin config.</param>
     /// <param name="item">The library item.</param>
+    /// <param name="user">The kid's Jellyfin user, for resume-aware pricing (optional).</param>
     /// <returns>The priced title, or null.</returns>
-    public ReferenceTitle? BuildTitle(PluginConfiguration config, BaseItem item)
+    public ReferenceTitle? BuildTitle(
+        PluginConfiguration config,
+        BaseItem item,
+        Jellyfin.Database.Implementations.Entities.User? user)
     {
         long? runtimeTicks = item.RunTimeTicks;
         if (item is Series series)
@@ -424,8 +496,41 @@ public sealed class RewardsService
             return null;
         }
 
+        var coinMinutes = Math.Max(1, config.CoinMinutes);
         var minutes = (int)Math.Round(TimeSpan.FromTicks(runtimeTicks.Value).TotalMinutes);
-        var coins = Math.Max(1, (int)Math.Ceiling(minutes / (double)Math.Max(1, config.CoinMinutes)));
+        var fullCoins = Math.Max(1, (int)Math.Ceiling(minutes / (double)coinMinutes));
+
+        // Resume detection: movies (and other single items) with a saved playback position
+        // and at least a minute left. Series are skipped — an episode is cheap anyway and
+        // "which episode is she resuming" has no single answer.
+        long resumeTicks = 0;
+        if (user is not null && item is not Series)
+        {
+            try
+            {
+                var pos = _userDataManager.GetUserData(user, item)?.PlaybackPositionTicks ?? 0;
+                if (pos > 0 && runtimeTicks.Value - pos >= TimeSpan.TicksPerMinute)
+                {
+                    resumeTicks = pos;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "KidsLimit: resume lookup failed for {Item}.", item.Id);
+            }
+        }
+
+        var remainingMinutes = minutes;
+        var coins = fullCoins;
+        var progressPct = 0;
+        if (resumeTicks > 0)
+        {
+            remainingMinutes = Math.Max(
+                1,
+                (int)Math.Ceiling(TimeSpan.FromTicks(runtimeTicks.Value - resumeTicks).TotalMinutes));
+            coins = Math.Max(1, (int)Math.Ceiling(remainingMinutes / (double)coinMinutes));
+            progressPct = (int)Math.Clamp(resumeTicks * 100 / runtimeTicks.Value, 1, 99);
+        }
 
         return new ReferenceTitle
         {
@@ -434,6 +539,11 @@ public sealed class RewardsService
             IsSeries = item is Series,
             RuntimeMinutes = minutes,
             CoinCost = coins,
+            FullCoinCost = fullCoins,
+            RemainingMinutes = remainingMinutes,
+            InProgress = resumeTicks > 0,
+            ProgressPct = progressPct,
+            ResumeTicks = resumeTicks,
         };
     }
 
@@ -445,8 +555,9 @@ public sealed class RewardsService
     /// </summary>
     /// <param name="userGuid">The user.</param>
     /// <param name="itemId">The item (movie/episode/series).</param>
+    /// <param name="startPositionTicks">Where to resume from (0 = from the beginning).</param>
     /// <returns>True when a session accepted the Play command.</returns>
-    public async Task<bool> TryPlayAsync(Guid userGuid, Guid itemId)
+    public async Task<bool> TryPlayAsync(Guid userGuid, Guid itemId, long startPositionTicks = 0)
     {
         var item = _libraryManager.GetItemById(itemId);
         if (item is null)
@@ -463,6 +574,7 @@ public sealed class RewardsService
             }
 
             item = episodes[Random.Shared.Next(episodes.Count)];
+            startPositionTicks = 0; // the random episode is not the item the resume belongs to
         }
 
         var sessions = _sessionManager.Sessions
@@ -482,6 +594,7 @@ public sealed class RewardsService
                         ItemIds = new[] { item.Id },
                         PlayCommand = PlayCommand.PlayNow,
                         ControllingUserId = userGuid,
+                        StartPositionTicks = startPositionTicks > 0 ? startPositionTicks : null,
                     },
                     CancellationToken.None).ConfigureAwait(false);
                 return true;
@@ -532,6 +645,24 @@ public class ReferenceTitle
     /// <summary>Gets or sets the runtime in minutes (median episode runtime for series).</summary>
     public int RuntimeMinutes { get; set; }
 
-    /// <summary>Gets or sets the coin cost to watch one of it.</summary>
+    /// <summary>
+    /// Gets or sets the coin cost to watch it NOW: the remaining runtime when the item is
+    /// partly watched, the full runtime otherwise.
+    /// </summary>
     public int CoinCost { get; set; }
+
+    /// <summary>Gets or sets the coin cost of the full runtime (ignores any resume position).</summary>
+    public int FullCoinCost { get; set; }
+
+    /// <summary>Gets or sets the minutes left to watch (equals runtime when not started).</summary>
+    public int RemainingMinutes { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether the kid is partway through this item.</summary>
+    public bool InProgress { get; set; }
+
+    /// <summary>Gets or sets how much of it is watched, 1–99, or 0 when not in progress.</summary>
+    public int ProgressPct { get; set; }
+
+    /// <summary>Gets or sets the saved playback position to resume from (ticks).</summary>
+    public long ResumeTicks { get; set; }
 }

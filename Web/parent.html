@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Kids Watch-Time</title>
+<style>
+    /* Standalone parent dashboard: the same controls as the Jellyfin admin page, but
+       served straight by the plugin (/KidsLimit/parent?token=...) so it works from any
+       phone browser with only the parent token — no Jellyfin admin login. Mobile-first. */
+    :root {
+        --bg: #14172e;
+        --card: #1e2242;
+        --card2: #262b52;
+        --ink: #eef0ff;
+        --sub: rgba(238, 240, 255, .62);
+        --line: rgba(255, 255, 255, .1);
+        --accent: #ffd24a;
+        --good: #2ecc71;
+        --warn: #e67e22;
+        --bad: #e74c3c;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+        background: var(--bg); color: var(--ink); min-height: 100vh;
+        font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+        padding: 1em; padding-bottom: 3em; max-width: 46em; margin: 0 auto;
+    }
+    header { display: flex; align-items: baseline; gap: .6em; flex-wrap: wrap; margin-bottom: .35em; }
+    h1 { font-size: 1.35em; }
+    #status { color: var(--sub); font-size: .8em; }
+
+    /* gold coin with a star */
+    .coin {
+        display: inline-block; width: 1em; height: 1em; vertical-align: -.12em;
+        background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='11' fill='%23e8a512'/%3E%3Ccircle cx='12' cy='12' r='8.7' fill='%23ffd24a' stroke='%23d0920f' stroke-width='1.1'/%3E%3Cpath d='M12 6.1l1.79 3.63 4.01.58-2.9 2.83.68 3.99L12 15.25l-3.58 1.88.68-3.99-2.9-2.83 4.01-.58z' fill='%23c9880e'/%3E%3C/svg%3E") no-repeat center / contain;
+    }
+
+    .card {
+        background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+        padding: .9em 1em; margin-top: 1em; display: flex; flex-direction: column; gap: .55em;
+    }
+    .cardTop { display: flex; justify-content: space-between; align-items: baseline; gap: .5em; }
+    .kidName { font-size: 1.25em; font-weight: 700; }
+    .meta { color: var(--sub); font-size: .8em; text-align: right; }
+    .flag {
+        align-self: flex-start; font-weight: 700; font-size: .8em; padding: .15em .7em;
+        border-radius: 20px; background: rgba(231, 76, 60, .18); color: #ff8f81;
+    }
+    .remain { display: flex; align-items: baseline; gap: .5em; }
+    .chip { font-size: 1.25em; font-weight: 800; padding: .02em .5em; border-radius: 9px; color: #fff; }
+    .sub { color: var(--sub); font-size: .82em; }
+
+    .barRow { display: flex; align-items: center; gap: .55em; font-size: .85em; }
+    .barRow .lbl { width: 5.2em; color: var(--sub); flex: 0 0 auto; }
+    .barRow .val { margin-left: auto; white-space: nowrap; color: var(--sub); }
+    .bar { flex: 1 1 auto; height: 8px; border-radius: 5px; background: rgba(255,255,255,.12); overflow: hidden; min-width: 50px; }
+    .bar > span { display: block; height: 100%; border-radius: 5px; }
+
+    .section { border-top: 1px dashed var(--line); padding-top: .55em; }
+    .coins { display: flex; align-items: center; gap: .4em; font-size: 1.05em; }
+    .coins strong { font-size: 1.2em; }
+
+    .claim {
+        display: flex; align-items: center; gap: .45em; padding: .4em .6em;
+        background: rgba(255, 210, 74, .12); border-radius: 10px; margin-top: .3em;
+    }
+    .claim .who { flex: 1 1 auto; min-width: 0; }
+
+    button {
+        font: inherit; color: var(--ink); background: var(--card2);
+        border: 1px solid var(--line); border-radius: 10px; padding: .5em .8em;
+        cursor: pointer; touch-action: manipulation;
+    }
+    button:active { transform: scale(.97); }
+    button.ok { background: rgba(46, 204, 113, .25); border-color: rgba(46, 204, 113, .5); }
+    button.no { background: rgba(231, 76, 60, .22); border-color: rgba(231, 76, 60, .5); }
+    .btns { display: flex; flex-wrap: wrap; gap: .4em; align-items: center; }
+    .kidLink { font-size: .85em; }
+    .kidLink a { color: var(--accent); }
+    .empty { color: var(--sub); padding: 2em 0; text-align: center; }
+
+    #toast {
+        position: fixed; left: 50%; bottom: 1.2em; transform: translateX(-50%);
+        background: #000c; color: #fff; padding: .6em 1.2em; border-radius: 12px;
+        font-size: .9em; opacity: 0; transition: opacity .25s ease; pointer-events: none;
+        max-width: 90vw; text-align: center; z-index: 5;
+    }
+    #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+    <header>
+        <h1>🧒 Kids Watch-Time</h1>
+        <span id="status">…</span>
+    </header>
+    <div id="cards"></div>
+    <div id="toast"></div>
+
+<script>
+(function () {
+    'use strict';
+
+    var token = new URLSearchParams(location.search).get('token') || '';
+    var meta = { Chores: [], Users: [], CoinMinutes: 5 };
+    var toastTimer = null;
+
+    function esc(s) { return (s || '').toString().replace(/[&<>"]/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+    function norm(s) { return (s || '').toString().replace(/-/g, '').toLowerCase(); }
+    function coin() { return '<span class="coin"></span>'; }
+
+    function fmt(sec) {
+        sec = Math.max(0, Math.round(sec || 0));
+        var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+        return h > 0 ? h + 'h ' + m + 'm' : m + 'm';
+    }
+    function capText(min) { return (min === null || min === undefined) ? '∞' : fmt(min * 60); }
+
+    function toast(msg) {
+        var el = document.getElementById('toast');
+        el.textContent = msg;
+        el.classList.add('show');
+        if (toastTimer) { clearTimeout(toastTimer); }
+        toastTimer = setTimeout(function () { el.classList.remove('show'); }, 2500);
+    }
+
+    // Served from /KidsLimit/parent, so relative paths hit sibling /KidsLimit/* endpoints.
+    function api(path, method) {
+        var sep = path.indexOf('?') >= 0 ? '&' : '?';
+        return fetch(path + sep + 'token=' + encodeURIComponent(token), { method: method || 'GET' })
+            .then(function (r) { if (!r.ok) { throw new Error(r.status); } return r.json(); });
+    }
+
+    function barColor(pct) { return pct >= 1 ? 'var(--bad)' : pct >= 0.8 ? 'var(--warn)' : 'var(--good)'; }
+
+    function bar(used, cap) {
+        if (cap === null || cap === undefined) {
+            return '<div class="bar"><span style="width:100%;background:rgba(46,204,113,.4);"></span></div>';
+        }
+        var pct = cap > 0 ? Math.min(1, used / (cap * 60)) : 1;
+        return '<div class="bar"><span style="width:' + (pct * 100).toFixed(0) + '%;background:' + barColor(pct) + ';"></span></div>';
+    }
+
+    function barRow(label, used, cap) {
+        return '<div class="barRow"><span class="lbl">' + label + '</span>' + bar(used, cap) +
+            '<span class="val">' + fmt(used) + ' / ' + capText(cap) + '</span></div>';
+    }
+
+    function kidLinkFor(userId) {
+        var u = meta.Users.filter(function (x) { return norm(x.UserId) === norm(userId); })[0];
+        return u && u.KidUrl
+            ? '<span class="kidLink">🧒 <a href="' + esc(u.KidUrl) + '" target="_blank" rel="noopener">Open kid page ↗</a></span>'
+            : '';
+    }
+
+    function bonusBtn(userId, mins) {
+        return '<button type="button" class="btnBonus" data-userid="' + esc(userId) +
+            '" data-mins="' + mins + '">+' + mins + 'm</button>';
+    }
+
+    function renderCard(s) {
+        var remaining = s.HasLimit ? fmt(s.EffectiveRemainingSeconds) : '∞';
+        var remColor = !s.HasLimit ? 'var(--good)'
+            : (s.EffectiveRemainingSeconds <= 0) ? 'var(--bad)'
+            : (s.EffectiveRemainingSeconds <= 600) ? 'var(--warn)' : 'var(--good)';
+
+        var flag = s.ManuallyStopped ? '<span class="flag">■ Stopped by parent</span>'
+            : (s.Blocked ? '<span class="flag">■ Over limit</span>' : '');
+
+        return '<div class="card" data-userid="' + esc(s.UserId) + '">' +
+            '<div class="cardTop">' +
+                '<span class="kidName">' + esc(s.UserName) + '</span>' +
+                '<span class="meta">' + esc(s.PresetName) + '<br>' + esc(s.CurrentWindow) + '</span>' +
+            '</div>' +
+            flag +
+            '<div class="remain"><span class="sub">Time left</span>' +
+                '<span class="chip" style="background:' + remColor + ';">' + remaining + '</span>' +
+                (s.HasLimit && s.BindingCap ? '<span class="sub">(' + esc(s.BindingCap) + ' cap)</span>' : '') +
+            '</div>' +
+            barRow('Today', s.SecondsWatchedTotal, s.DailyCapMinutes) +
+            (s.BonusSeconds > 0 ? '<div class="sub" style="color:var(--good);">+' + fmt(s.BonusSeconds) + ' bonus added today</div>' : '') +
+            barRow('Session', s.CurrentSessionSeconds, s.SessionCapMinutes) +
+            barRow('Morning', s.SecondsMorning, s.MorningCapMinutes) +
+            barRow('Afternoon', s.SecondsAfternoon, s.AfternoonCapMinutes) +
+            barRow('Evening', s.SecondsEvening, s.EveningCapMinutes) +
+            '<div id="hist-' + esc(s.UserId) + '" class="sub">History…</div>' +
+            '<div class="section" id="wallet-' + esc(s.UserId) + '">Coins…</div>' +
+            '<div class="section btns">' +
+                bonusBtn(s.UserId, 10) + bonusBtn(s.UserId, 30) + bonusBtn(s.UserId, 60) +
+                '<button type="button" class="btnCustom" data-userid="' + esc(s.UserId) + '">+ custom</button>' +
+                (s.ManuallyStopped
+                    ? '<button type="button" class="ok btnAllow" data-userid="' + esc(s.UserId) + '">▶ Allow again</button>'
+                    : '<button type="button" class="no btnStop" data-userid="' + esc(s.UserId) + '">■ Stop now</button>') +
+            '</div>' +
+            (kidLinkFor(s.UserId) ? '<div>' + kidLinkFor(s.UserId) + '</div>' : '') +
+            '</div>';
+    }
+
+    function wire(root) {
+        root.querySelectorAll('.btnBonus').forEach(function (b) {
+            b.onclick = function () { grant(this.getAttribute('data-userid'), parseInt(this.getAttribute('data-mins'), 10)); };
+        });
+        root.querySelectorAll('.btnCustom').forEach(function (b) {
+            b.onclick = function () {
+                var uid = this.getAttribute('data-userid');
+                var v = prompt('Bonus minutes to grant (negative to remove):', '15');
+                if (v !== null) { var n = parseInt(v, 10); if (n) { grant(uid, n); } }
+            };
+        });
+        root.querySelectorAll('.btnStop').forEach(function (b) {
+            b.onclick = function () { api('stop?user=' + encodeURIComponent(this.getAttribute('data-userid')), 'POST')
+                .then(function () { setTimeout(load, 500); }, function () { toast('Failed to stop.'); }); };
+        });
+        root.querySelectorAll('.btnAllow').forEach(function (b) {
+            b.onclick = function () { api('allow?user=' + encodeURIComponent(this.getAttribute('data-userid')), 'POST')
+                .then(function () { setTimeout(load, 500); }, function () { toast('Failed to allow.'); }); };
+        });
+    }
+
+    function grant(userId, mins) {
+        api('bonus?user=' + encodeURIComponent(userId) + '&minutes=' + mins, 'POST')
+            .then(load, function () { toast('Failed to grant bonus.'); });
+    }
+
+    function renderWallet(userId, w) {
+        var el = document.getElementById('wallet-' + userId);
+        if (!el) { return; }
+
+        var html = '<div class="coins">' + coin() + ' <strong>' + w.CoinBalance + '</strong>' +
+            '<span class="sub">= ' + fmt(w.CoinBalance * w.CoinMinutes * 60) +
+            (w.CoinsRedeemedToday ? ' · spent today: ' + w.CoinsRedeemedToday : '') + '</span></div>';
+
+        (w.PendingClaims || []).forEach(function (c) {
+            html += '<div class="claim">' +
+                '<span class="who">⏳ ' + esc(c.ChoreName) + ' <strong>' + coin() + c.Coins + '</strong>' +
+                ' <span class="sub">' + new Date(c.ClaimedAtUtc).toLocaleTimeString() + '</span></span>' +
+                '<button type="button" class="ok btnClaim" data-userid="' + esc(userId) +
+                '" data-claim="' + esc(c.Id) + '" data-op="approve">✓</button>' +
+                '<button type="button" class="no btnClaim" data-userid="' + esc(userId) +
+                '" data-claim="' + esc(c.Id) + '" data-op="reject">✗</button></div>';
+        });
+
+        html += '<div class="btns" style="margin-top:.45em;">';
+        meta.Chores.forEach(function (c) {
+            html += '<button type="button" class="btnEarn" data-userid="' + esc(userId) +
+                '" data-chore="' + esc(c.Id) + '" title="' + esc(c.Name) + '">+' +
+                esc(c.Icon || '⭐') + coin() + c.Coins + '</button>';
+        });
+        html += '<button type="button" class="btnRedeemCoins" data-userid="' + esc(userId) + '">Spend coins…</button>' +
+            '<button type="button" class="btnAdjustCoins" data-userid="' + esc(userId) + '">± adjust</button></div>';
+
+        el.innerHTML = html;
+
+        el.querySelectorAll('.btnClaim').forEach(function (b) {
+            b.onclick = function () {
+                var uid = this.getAttribute('data-userid');
+                api('claims/' + this.getAttribute('data-op') +
+                    '?user=' + encodeURIComponent(uid) +
+                    '&claimId=' + encodeURIComponent(this.getAttribute('data-claim')), 'POST')
+                    .then(function (wallet) { renderWallet(uid, wallet); },
+                          function () { toast('Claim update failed.'); });
+            };
+        });
+        el.querySelectorAll('.btnEarn').forEach(function (b) {
+            b.onclick = function () {
+                var uid = this.getAttribute('data-userid');
+                api('wallet/earn?user=' + encodeURIComponent(uid) +
+                    '&choreId=' + encodeURIComponent(this.getAttribute('data-chore')), 'POST')
+                    .then(function (wallet) { renderWallet(uid, wallet); },
+                          function () { toast('Failed to add coins.'); });
+            };
+        });
+        el.querySelectorAll('.btnRedeemCoins').forEach(function (b) {
+            b.onclick = function () {
+                var uid = this.getAttribute('data-userid');
+                var v = prompt('Coins to spend as watch time now:', '3');
+                if (v === null) { return; }
+                var n = parseInt(v, 10);
+                if (!n || n <= 0) { return; }
+                api('wallet/redeem?user=' + encodeURIComponent(uid) + '&coins=' + n, 'POST')
+                    .then(function (r) {
+                        if (r.Error === 'balance') { toast('Not enough coins.'); }
+                        else if (r.Error === 'dailycap') { toast('Daily redeem cap reached.'); }
+                        load();
+                    }, function () { toast('Redeem failed.'); });
+            };
+        });
+        el.querySelectorAll('.btnAdjustCoins').forEach(function (b) {
+            b.onclick = function () {
+                var uid = this.getAttribute('data-userid');
+                var v = prompt('Coin adjustment (negative to remove):', '1');
+                if (v === null) { return; }
+                var n = parseInt(v, 10);
+                if (!n) { return; }
+                api('wallet/adjust?user=' + encodeURIComponent(uid) + '&coins=' + n, 'POST')
+                    .then(function (wallet) { renderWallet(uid, wallet); },
+                          function () { toast('Adjust failed.'); });
+            };
+        });
+    }
+
+    function loadWallet(userId) {
+        api('wallet/' + encodeURIComponent(userId)).then(function (w) {
+            renderWallet(userId, w);
+        }, function () {
+            var el = document.getElementById('wallet-' + userId);
+            if (el) { el.textContent = 'Coins unavailable.'; }
+        });
+    }
+
+    function loadHistory(userId) {
+        api('history/' + encodeURIComponent(userId) + '?days=7').then(function (hist) {
+            var el = document.getElementById('hist-' + userId);
+            if (!el) { return; }
+            if (!hist || !hist.length) { el.textContent = 'No history yet.'; return; }
+            var total = hist.reduce(function (a, h) { return a + h.SecondsWatchedTotal; }, 0);
+            el.textContent = 'Last ' + hist.length + ' day(s): avg ' + fmt(total / hist.length) + '/day, total ' + fmt(total) + '.';
+        }, function () {});
+    }
+
+    function load() {
+        api('status').then(function (list) {
+            document.getElementById('status').textContent =
+                (list.length ? list.length + ' kid(s)' : 'No enabled kids') +
+                ' · updated ' + new Date().toLocaleTimeString();
+            var cards = document.getElementById('cards');
+            cards.innerHTML = list.length
+                ? list.map(renderCard).join('')
+                : '<div class="empty">No enabled users. Enable kids in the plugin settings.</div>';
+            wire(cards);
+            list.forEach(function (s) { loadHistory(s.UserId); loadWallet(s.UserId); });
+        }, function () {
+            document.getElementById('status').textContent = 'Failed to load — check the token in the URL.';
+        });
+    }
+
+    api('parent/meta').then(function (m) {
+        meta = m;
+        load();
+        setInterval(load, 15000);
+    }, function () {
+        document.getElementById('status').textContent = 'Unauthorized — check the token in the URL.';
+    });
+})();
+</script>
+</body>
+</html>

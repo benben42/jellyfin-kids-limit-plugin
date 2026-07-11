@@ -49,6 +49,12 @@ public class PendingClaim
 
     /// <summary>Gets or sets the local date (yyyy-MM-dd) of the claim, for max-per-day counting.</summary>
     public string Date { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the random secret embedded in the notification's approve/decline links,
+    /// so tapping them needs no login. Only valid while the claim is pending.
+    /// </summary>
+    public string ActionKey { get; set; } = string.Empty;
 }
 
 /// <summary>One wallet transaction.</summary>

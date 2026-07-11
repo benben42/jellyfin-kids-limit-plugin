@@ -133,6 +133,15 @@ public class PluginConfiguration : BasePluginConfiguration
     public int MaxRedeemCoinsPerDay { get; set; }
 
     /// <summary>
+    /// Gets or sets the server's public base URL ("https://jellyfin.example.com" or
+    /// "http://192.168.1.10:8096"), used to build the one-tap approve/decline links in
+    /// chore-claim notifications and the copyable kid/parent page URLs. When empty, the
+    /// URL of the request that triggered the notification is used, which works as long
+    /// as the phone can reach the same address the kid's device used.
+    /// </summary>
+    public string PublicBaseUrl { get; set; } = string.Empty;
+
+    /// <summary>
     /// Gets or sets the push-notification destinations for rewards events (chore claims).
     /// Supports ntfy, Pushover, Gotify, Discord/Slack webhooks, Telegram, an Apprise API
     /// server, and generic JSON webhooks — see <see cref="NotificationTarget"/>.

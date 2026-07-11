@@ -38,18 +38,25 @@ public sealed class NotificationService
     /// <param name="config">Plugin config.</param>
     /// <param name="title">Notification title.</param>
     /// <param name="message">Notification body.</param>
-    public void Send(PluginConfiguration config, string title, string message) =>
-        _ = SendAsync(config, title, message);
+    /// <param name="actions">Optional one-tap action links (approve/decline).</param>
+    public void Send(
+        PluginConfiguration config,
+        string title,
+        string message,
+        IReadOnlyList<NotificationAction>? actions = null) =>
+        _ = SendAsync(config, title, message, actions);
 
     /// <summary>Sends to all enabled targets and reports how many succeeded.</summary>
     /// <param name="config">Plugin config.</param>
     /// <param name="title">Notification title.</param>
     /// <param name="message">Notification body.</param>
+    /// <param name="actions">Optional one-tap action links (approve/decline).</param>
     /// <returns>(succeeded, attempted) counts.</returns>
     public async Task<(int Succeeded, int Attempted)> SendAsync(
         PluginConfiguration config,
         string title,
-        string message)
+        string message,
+        IReadOnlyList<NotificationAction>? actions = null)
     {
         var targets = (config.NotificationTargets ?? new List<NotificationTarget>())
             .FindAll(t => t.Enabled);
@@ -59,7 +66,7 @@ public sealed class NotificationService
         {
             try
             {
-                using var request = BuildRequest(target, title, message);
+                using var request = BuildRequest(target, title, message, actions);
                 if (request is null)
                 {
                     continue;
@@ -84,7 +91,11 @@ public sealed class NotificationService
         return (succeeded, targets.Count);
     }
 
-    private static HttpRequestMessage? BuildRequest(NotificationTarget target, string title, string message)
+    private static HttpRequestMessage? BuildRequest(
+        NotificationTarget target,
+        string title,
+        string message,
+        IReadOnlyList<NotificationAction>? actions)
     {
         switch (target.Type)
         {
@@ -101,6 +112,14 @@ public sealed class NotificationService
                 };
                 req.Headers.TryAddWithoutValidation("Title", title);
                 req.Headers.TryAddWithoutValidation("Tags", "coin");
+                if (actions is { Count: > 0 })
+                {
+                    // ntfy renders these as real notification buttons. HTTP header values
+                    // must stay ASCII, so emoji in the labels are stripped here.
+                    req.Headers.TryAddWithoutValidation("Actions", string.Join("; ", actions.Select(a =>
+                        "view, " + AsciiLabel(a.Label) + ", " + a.Url + ", clear=true")));
+                }
+
                 if (!string.IsNullOrWhiteSpace(target.Token))
                 {
                     req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", target.Token);
@@ -116,15 +135,26 @@ public sealed class NotificationService
                     return null;
                 }
 
+                var fields = new Dictionary<string, string>
+                {
+                    ["token"] = target.Token,
+                    ["user"] = target.UserKey,
+                    ["title"] = title,
+                    ["message"] = message,
+                };
+
+                if (actions is { Count: > 0 })
+                {
+                    // Pushover has no multi-button actions; tappable HTML links in the
+                    // body are the closest thing. Expanding the notification shows them.
+                    fields["html"] = "1";
+                    fields["message"] = HtmlEscape(message) + "\n\n" + string.Join("      ", actions.Select(a =>
+                        "<a href=\"" + HtmlEscape(a.Url) + "\"><b>" + HtmlEscape(a.Label) + "</b></a>"));
+                }
+
                 return new HttpRequestMessage(HttpMethod.Post, "https://api.pushover.net/1/messages.json")
                 {
-                    Content = new FormUrlEncodedContent(new Dictionary<string, string>
-                    {
-                        ["token"] = target.Token,
-                        ["user"] = target.UserKey,
-                        ["title"] = title,
-                        ["message"] = message,
-                    }),
+                    Content = new FormUrlEncodedContent(fields),
                 };
             }
 
@@ -191,6 +221,23 @@ public sealed class NotificationService
         }
     }
 
+    private static string AsciiLabel(string s)
+    {
+        var cleaned = new string(s.Where(c => c < 128 && c != ',' && c != ';').ToArray()).Trim();
+        return cleaned.Length > 0 ? cleaned : "Open";
+    }
+
+    private static string HtmlEscape(string s) =>
+        s.Replace("&", "&amp;", StringComparison.Ordinal)
+            .Replace("<", "&lt;", StringComparison.Ordinal)
+            .Replace(">", "&gt;", StringComparison.Ordinal)
+            .Replace("\"", "&quot;", StringComparison.Ordinal);
+
     private static StringContent JsonContent(object payload) =>
         new(JsonSerializer.Serialize(payload, JsonOpts), Encoding.UTF8, "application/json");
 }
+
+/// <summary>A one-tap link attached to a notification (e.g. approve/decline a chore claim).</summary>
+/// <param name="Label">Button/link text, emoji welcome.</param>
+/// <param name="Url">Absolute URL the tap opens.</param>
+public sealed record NotificationAction(string Label, string Url);

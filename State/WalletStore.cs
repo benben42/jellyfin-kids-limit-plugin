@@ -148,6 +148,7 @@ public class WalletStore
             Coins = c.Coins,
             ClaimedAtUtc = c.ClaimedAtUtc,
             Date = c.Date,
+            ActionKey = c.ActionKey,
         }).ToList(),
         Ledger = w.Ledger.Select(e => new LedgerEntry
         {

@@ -52,6 +52,11 @@
         #kidsLimitDashboardPage .klBtns .sep { flex:1 1 100%; height:0; }
         #kidsLimitDashboardPage .klKidLink { font-size:.85em; opacity:.8; }
         #kidsLimitDashboardPage .klHint { opacity:.6; font-size:.8em; }
+        /* gold coin with a star */
+        #kidsLimitDashboardPage .coin {
+            display:inline-block; width:1em; height:1em; vertical-align:-.12em;
+            background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='11' fill='%23e8a512'/%3E%3Ccircle cx='12' cy='12' r='8.7' fill='%23ffd24a' stroke='%23d0920f' stroke-width='1.1'/%3E%3Cpath d='M12 6.1l1.79 3.63 4.01.58-2.9 2.83.68 3.99L12 15.25l-3.58 1.88.68-3.99-2.9-2.83 4.01-.58z' fill='%23c9880e'/%3E%3C/svg%3E") no-repeat center / contain;
+        }
     </style>
     <div data-role="content">
         <div class="content-primary">
@@ -60,6 +65,7 @@
                     <h2 class="sectionTitle">Kids Watch-Time</h2>
                     <button is="emby-button" type="button" id="btnRefresh" class="raised"><span>↻ Refresh</span></button>
                     <a is="emby-linkbutton" class="raised" href="configurationpage?name=KidsLimitConfig"><span>⚙ Settings</span></a>
+                    <a is="emby-linkbutton" class="raised" id="lnkParentPage" href="#" target="_blank" rel="noopener" style="display:none;"><span>📱 Phone page ↗</span></a>
                 </div>
                 <p id="dashStatus" class="fieldDescription"></p>
             </div>
@@ -201,13 +207,13 @@
             var el = page.querySelector('#wallet-' + userId);
             if (!el) { return; }
 
-            var html = '<div class="klCoins">🪙 <strong>' + w.CoinBalance + '</strong>' +
+            var html = '<div class="klCoins"><span class="coin"></span> <strong>' + w.CoinBalance + '</strong>' +
                 '<span class="klSub">= ' + fmt(w.CoinBalance * w.CoinMinutes * 60) +
                 (w.CoinsRedeemedToday ? ' · spent today: ' + w.CoinsRedeemedToday : '') + '</span></div>';
 
             (w.PendingClaims || []).forEach(function (c) {
                 html += '<div class="klClaim">' +
-                    '<span style="flex:1 1 auto;">⏳ ' + esc(c.ChoreName) + ' <strong>🪙' + c.Coins + '</strong>' +
+                    '<span style="flex:1 1 auto;">⏳ ' + esc(c.ChoreName) + ' <strong><span class="coin"></span>' + c.Coins + '</strong>' +
                     ' <span class="klSub">' + new Date(c.ClaimedAtUtc).toLocaleTimeString() + '</span></span>' +
                     '<button is="emby-button" type="button" class="raised button-submit btnClaim" data-userid="' + esc(userId) +
                     '" data-claim="' + esc(c.Id) + '" data-op="approve" style="min-width:3em;"><span>✓</span></button>' +
@@ -220,7 +226,7 @@
                 if (c.Enabled === false) { return; }
                 html += '<button is="emby-button" type="button" class="raised btnEarn" data-userid="' + esc(userId) +
                     '" data-chore="' + esc(c.Id) + '" title="' + esc(c.Name) + '">' +
-                    '<span>+' + esc(c.Icon || '⭐') + '🪙' + c.Coins + '</span></button>';
+                    '<span>+' + esc(c.Icon || '⭐') + '<span class="coin"></span>' + c.Coins + '</span></button>';
             });
             html += '<span class="sep"></span>' +
                 '<button is="emby-button" type="button" class="raised btnRedeemCoins" data-userid="' + esc(userId) +
@@ -319,6 +325,11 @@
                 token = cfg.BonusApiToken || '';
                 chores = cfg.Chores || [];
                 usersCfg = cfg.Users || [];
+                if (token) {
+                    var lnk = page.querySelector('#lnkParentPage');
+                    lnk.href = ApiClient.getUrl('KidsLimit/parent') + '?token=' + encodeURIComponent(token);
+                    lnk.style.display = '';
+                }
                 Dashboard.hideLoadingMsg();
                 if (!token) {
                     page.querySelector('#dashStatus').innerHTML =

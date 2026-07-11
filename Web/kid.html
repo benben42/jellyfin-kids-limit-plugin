@@ -83,6 +83,16 @@
         content: "🔒"; position: absolute; top: -1vh; left: -1vh; font-size: 3.4vh;
         filter: drop-shadow(0 .3vh .3vh rgba(0,0,0,.5));
     }
+    /* Locked-because-daily-allowance-is-spent reads differently from locked-because-broke:
+       the moon says "come back tomorrow", the padlock says "you need more coins". */
+    .tile.disabled.lockMoon::after { content: "🌙"; }
+
+    /* Gold coin with a star — the plugin's coin icon. Sized by font-size (1em square). */
+    .coin {
+        display: inline-block; width: 1em; height: 1em; vertical-align: -.12em;
+        background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='11' fill='%23e8a512'/%3E%3Ccircle cx='12' cy='12' r='8.7' fill='%23ffd24a' stroke='%23d0920f' stroke-width='1.1'/%3E%3Cpath d='M12 6.1l1.79 3.63 4.01.58-2.9 2.83.68 3.99L12 15.25l-3.58 1.88.68-3.99-2.9-2.83 4.01-.58z' fill='%23c9880e'/%3E%3C/svg%3E") no-repeat center / contain;
+        filter: drop-shadow(0 .06em .05em rgba(0,0,0,.35));
+    }
 
     /* chores */
     .chore {
@@ -103,12 +113,31 @@
         font-size: 8.5vh; background: rgba(13, 16, 48, .55); border-radius: 2.2vh;
     }
 
+    /* extra-time tiles: coins → plain minutes, to finish whatever is playing */
+    .timeTile {
+        width: 21vh; height: 21vh; background: linear-gradient(150deg, var(--card2), var(--card));
+        box-shadow: 0 1.2vh 3vh rgba(0,0,0,.3);
+    }
+    .timeTile .icon { font-size: 8.5vh; line-height: 1.1; }
+    .timeTile .name { font-size: 3vh; font-weight: 800; color: var(--good); }
+
     /* titles (library posters) */
     .title { width: 22vh; }
+    .title .posterWrap { position: relative; width: 22vh; }
     .title .poster {
         width: 22vh; height: 32vh; object-fit: cover; border-radius: 2.4vh;
         background: linear-gradient(150deg, var(--card2), var(--card));
         display: block; box-shadow: 0 1.4vh 3.5vh rgba(0,0,0,.4);
+    }
+    /* how far into it she is — an in-progress movie costs only what's left */
+    .title .prog {
+        position: absolute; left: 1.2vh; right: 1.2vh; bottom: 1.2vh; height: 1.3vh;
+        border-radius: 1vh; background: rgba(0, 0, 0, .6); overflow: hidden;
+        box-shadow: 0 0 1vh rgba(0,0,0,.5);
+    }
+    .title .prog > span {
+        display: block; height: 100%; border-radius: 1vh;
+        background: linear-gradient(90deg, #6ff0a3, #35c46f);
     }
     .title .name {
         font-size: 2vh; opacity: .8; padding: .9vh .6vh 0; max-width: 100%; text-align: center;
@@ -159,12 +188,17 @@
     </div>
 
     <div id="choreSection" class="section hidden">
-        <div class="rowTitle">🧹✨ <span class="pill">🪙 earn coins</span></div>
+        <div class="rowTitle">🧹✨ <span class="pill"><span class="coin"></span> earn coins</span></div>
         <div id="chores" class="grid"></div>
     </div>
 
+    <div id="timeSection" class="section">
+        <div class="rowTitle">⏳➕ <span class="pill"><span class="coin"></span> more time</span></div>
+        <div id="timeTiles" class="grid"></div>
+    </div>
+
     <div id="titleSection" class="section">
-        <div class="rowTitle">📺🍿 <span class="pill">🪙 spend to watch</span></div>
+        <div class="rowTitle">📺🍿 <span class="pill"><span class="coin"></span> pick &amp; watch</span></div>
         <div id="titles" class="grid"></div>
     </div>
 
@@ -222,17 +256,31 @@
     function esc(s) { return (s || '').toString().replace(/[&<>"]/g, function (c) {
         return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
 
+    function coin() { return '<span class="coin"></span>'; }
+
     function coinRow(n) {
         var shown = Math.min(n, 8);
         var out = '';
-        for (var i = 0; i < shown; i++) { out += '🪙'; }
+        for (var i = 0; i < shown; i++) { out += coin(); }
         return out || '🫙';
     }
 
     function redeemable() { return state ? state.RedeemableNow : 0; }
 
+    // Why posters are locked right now: 'coins' = jar is empty (go do chores),
+    // 'moon' = coins saved but today's spend allowance is used up (tomorrow!).
+    function lockReason() {
+        if (redeemable() > 0) { return null; }
+        return (state && state.CoinBalance > 0) ? 'moon' : 'coins';
+    }
+
+    function lockFlash(reason) {
+        if (reason === 'moon') { flashOverlay('🌙💤', '☀️ tomorrow', 1600); }
+        else { flashOverlay(coin() + '🔒', '🧹✨ ➜ ' + coin(), 1600); }
+    }
+
     function renderJar() {
-        document.getElementById('jarCoins').textContent = coinRow(state.CoinBalance);
+        document.getElementById('jarCoins').innerHTML = coinRow(state.CoinBalance);
         document.getElementById('jarCount').textContent = state.CoinBalance;
         if (lastCoins !== null && lastCoins !== state.CoinBalance) {
             var jar = document.getElementById('jar');
@@ -261,7 +309,7 @@
                 ' data-kind="chore" data-id="' + esc(c.Id) + '" data-blocked="' + (blocked ? '1' : '0') + '">' +
                 '<div class="icon">' + esc(c.Icon || '⭐') + '</div>' +
                 '<div class="name">' + esc(c.Name) + '</div>' +
-                '<div class="badge">🪙' + c.Coins + '</div>' +
+                '<div class="badge">' + coin() + c.Coins + '</div>' +
                 (pending ? '<div class="stateBadge">⏳</div>' : (done ? '<div class="stateBadge">✅</div>' : '')) +
                 '</div>';
         }).join('');
@@ -272,17 +320,42 @@
         }
     }
 
+    // A poster is tappable whenever ANY coins are redeemable: if the price is higher
+    // than what's left today, the redeem is partial (she watches what today allows and
+    // finishes another day at the remaining-time price).
     function titleTile(t, index) {
-        var blocked = t.CoinCost > redeemable();
-        return '<div class="tile title' + (blocked ? ' disabled' : '') + '" tabindex="0"' +
+        var reason = lockReason();
+        var blocked = reason !== null;
+        return '<div class="tile title' + (blocked ? ' disabled' : '') + (reason === 'moon' ? ' lockMoon' : '') +
+            '" tabindex="0"' +
             ' data-kind="title" data-id="' + esc(t.ItemId) + '" data-index="' + index + '"' +
             ' data-cost="' + t.CoinCost + '" data-blocked="' + (blocked ? '1' : '0') + '">' +
+            '<div class="posterWrap">' +
             '<img class="poster" loading="lazy" src="kid/image/' + esc(t.ItemId) +
                 '?token=' + encodeURIComponent(token) + '" alt="" ' +
                 'onerror="this.style.visibility=\'hidden\'" />' +
+            (t.InProgress ? '<div class="prog"><span style="width:' + t.ProgressPct + '%;"></span></div>' : '') +
+            '</div>' +
             '<div class="name">' + esc(t.Name) + '</div>' +
-            '<div class="badge">🪙' + t.CoinCost + '</div>' +
+            '<div class="badge">' + (t.InProgress ? '▶ ' : '') + coin() + t.CoinCost + '</div>' +
             '</div>';
+    }
+
+    function timeTile(coins) {
+        var reason = lockReason();
+        var blocked = reason !== null || coins > redeemable();
+        var mins = coins * (state ? state.CoinMinutes : 5);
+        return '<div class="tile timeTile' + (blocked ? ' disabled' : '') +
+            (reason === 'moon' ? ' lockMoon' : '') + '" tabindex="0"' +
+            ' data-kind="time" data-coins="' + coins + '" data-blocked="' + (blocked ? '1' : '0') + '">' +
+            '<div class="icon">⏳</div>' +
+            '<div class="name">+' + mins + ' ⏱</div>' +
+            '<div class="badge">' + coin() + coins + '</div>' +
+            '</div>';
+    }
+
+    function renderTimeTiles() {
+        document.getElementById('timeTiles').innerHTML = [1, 3].map(timeTile).join('');
     }
 
     function renderTitlesFresh() {
@@ -303,10 +376,17 @@
     // Refresh affordability on already-rendered posters without rebuilding the grid,
     // so a 20 s poll never yanks the child's D-pad focus mid-scroll.
     function remarkTitles() {
-        var r = redeemable();
+        var reason = lockReason();
         document.querySelectorAll('.title').forEach(function (el) {
-            var blocked = parseInt(el.getAttribute('data-cost'), 10) > r;
+            var blocked = reason !== null;
             el.classList.toggle('disabled', blocked);
+            el.classList.toggle('lockMoon', reason === 'moon');
+            el.setAttribute('data-blocked', blocked ? '1' : '0');
+        });
+        document.querySelectorAll('.timeTile').forEach(function (el) {
+            var blocked = reason !== null || parseInt(el.getAttribute('data-coins'), 10) > redeemable();
+            el.classList.toggle('disabled', blocked);
+            el.classList.toggle('lockMoon', reason === 'moon');
             el.setAttribute('data-blocked', blocked ? '1' : '0');
         });
     }
@@ -323,6 +403,7 @@
                 titles = s.Titles || [];
                 titlesTotal = s.TitlesTotal || titles.length;
                 pageSize = s.PageSize || 60;
+                renderTimeTiles();
                 renderTitlesFresh();
                 focusFirst();
             } else {
@@ -397,8 +478,8 @@
 
         if (tile.getAttribute('data-blocked') === '1') {
             sndNo();
-            // For a locked poster, tell her *why* in pictures: needs more coins.
-            if (kind === 'title') { flashOverlay('🪙🔒', 'need more 🪙', 1400); }
+            // For a locked tile, tell her *why* in pictures: empty jar vs spent-for-today.
+            if (kind === 'title' || kind === 'time') { lockFlash(lockReason() || 'coins'); }
             return;
         }
         sndSelect();
@@ -408,19 +489,33 @@
             if (!chore) { return; }
             openOverlay(
                 '<span style="font-size:16vh;">' + esc(chore.Icon || '⭐') + '</span>',
-                '🪙 × ' + chore.Coins + ' ?',
+                coin() + ' × ' + chore.Coins + ' ?',
                 [
                     { label: '👍', go: true, action: function () { claim(id); } },
                     { label: '👎', action: closeOverlay },
                 ]);
+        } else if (kind === 'time') {
+            var n = parseInt(tile.getAttribute('data-coins'), 10) || 1;
+            openOverlay(
+                '<span style="font-size:16vh;">⏳</span>',
+                coin() + ' × ' + n + ' → +' + (n * state.CoinMinutes) + ' ⏱ ?',
+                [
+                    { label: '👍', go: true, action: function () { redeemTime(n); } },
+                    { label: '↩️', action: closeOverlay },
+                ]);
         } else if (kind === 'title') {
             var title = titles.filter(function (t) { return t.ItemId === id; })[0];
             if (!title) { return; }
+            // Partial redeem: today's allowance is smaller than the price, so she spends
+            // what she can and gets that many minutes into the movie.
+            var charge = Math.min(title.CoinCost, redeemable());
+            var partial = charge < title.CoinCost;
             openOverlay(
                 '<img src="kid/image/' + esc(id) + '?token=' + encodeURIComponent(token) + '" alt="" />',
-                '🪙 × ' + title.CoinCost + ' → ▶️ ?',
+                coin() + ' × ' + charge + ' → ' + (title.InProgress ? '⏯' : '▶️') +
+                    (partial ? ' ' + (charge * state.CoinMinutes) + ' ⏱' : '') + ' ?',
                 [
-                    { label: '▶️', go: true, action: function () { redeem(id); } },
+                    { label: title.InProgress ? '⏯' : '▶️', go: true, action: function () { redeem(id); } },
                     { label: '↩️', action: closeOverlay },
                 ]);
         }
@@ -442,12 +537,28 @@
         api('redeem?itemId=' + encodeURIComponent(itemId), 'POST').then(function (r) {
             if (r.Error) {
                 sndNo();
-                // balance => not enough coins; dailycap => enough saved but today's spend limit hit.
-                flashOverlay(r.Error === 'dailycap' ? '🕐🚫' : '🪙🔒', '', 2200, true);
+                // balance => empty jar (do chores); dailycap => saved coins but today's allowance is spent.
+                if (r.Error === 'dailycap') { flashOverlay('🌙💤', '☀️ tomorrow', 2200, true); }
+                else { flashOverlay(coin() + '🔒', '🧹✨ ➜ ' + coin(), 2200, true); }
             } else {
                 sndYay();
                 // Played on her Jellyfin session, or a nudge to open the Jellyfin app.
-                flashOverlay(r.Played ? '🎉 ▶️' : '🎉 📺 👆', '', r.Played ? 2600 : 4200, true);
+                // Partial: she got part of the movie — the hourglass hints there's more later.
+                var art = (r.Played ? '🎉 ▶️' : '🎉 📺 👆') + (r.Partial ? ' ⏳' : '');
+                flashOverlay(art, '', r.Played ? 2600 : 4200, true);
+            }
+        }).catch(function () { sndNo(); flashOverlay('⚠️', '', 1800); });
+    }
+
+    function redeemTime(coins) {
+        api('time?coins=' + coins, 'POST').then(function (r) {
+            if (r.Error) {
+                sndNo();
+                if (r.Error === 'dailycap') { flashOverlay('🌙💤', '☀️ tomorrow', 2200, true); }
+                else { flashOverlay(coin() + '🔒', '🧹✨ ➜ ' + coin(), 2200, true); }
+            } else {
+                sndYay();
+                flashOverlay('🎉 ⏳ +' + (coins * state.CoinMinutes) + ' ⏱', '', 2600, true);
             }
         }).catch(function () { sndNo(); flashOverlay('⚠️', '', 1800); });
     }
