@@ -3,6 +3,33 @@
 <head>
     <meta charset="utf-8" />
     <title>Kids Watch-Time Limit</title>
+    <style>
+        /* Collapsible cards: keep long lists of presets/kids scannable. The header shows a
+           one-line summary; the editable fields live in a body that toggles open on click. */
+        .kl-card { padding: 0; margin-bottom: .6em; }
+        .kl-cardHeader {
+            display: flex; align-items: center; gap: .75em;
+            padding: .85em 1em; cursor: pointer; user-select: none;
+        }
+        .kl-cardHeader:hover { background: rgba(127, 127, 127, .12); }
+        .kl-headText { flex: 1 1 auto; min-width: 0; }
+        .kl-headTitle { font-weight: 600; }
+        .kl-headSummary { opacity: .65; font-size: .85em; margin-top: .15em; }
+        .kl-badge {
+            flex: 0 0 auto; font-size: .72em; padding: .15em .6em; border-radius: 1em;
+            background: rgba(127, 127, 127, .25); text-transform: uppercase; letter-spacing: .03em;
+        }
+        .kl-badge.kl-on { background: rgba(76, 175, 80, .3); }
+        .kl-caret { flex: 0 0 auto; transition: transform .15s ease; opacity: .7; }
+        .kl-card.kl-open .kl-caret { transform: rotate(180deg); }
+        .kl-cardBody { display: none; padding: 0 1em 1em; }
+        .kl-card.kl-open .kl-cardBody { display: block; }
+        .kl-presetActions { display: flex; flex-wrap: wrap; gap: .5em; margin-top: .5em; }
+        .kl-presetActions > button { flex: 1 1 12em; margin: 0; }
+        .kl-help { margin: .5em 0 0; }
+        .kl-help > summary { cursor: pointer; opacity: .8; }
+        .kl-help[open] > summary { margin-bottom: .5em; }
+    </style>
 </head>
 <body>
 <div id="kidsLimitConfigPage" data-role="page" class="page type-interior pluginConfigurationPage"
@@ -65,13 +92,9 @@
                     </label>
                     <div class="fieldDescription">
                         Recommended if your client (e.g. Android TV) ignores the server's Stop command.
-                        When a kid is over their <strong>daily or window</strong> limit, the plugin blocks
-                        that user at the server so playback stops even on stubborn clients, and restores
-                        access automatically when they're back under limit, granted bonus, or at midnight.
-                        Turn this off (and Save) before uninstalling the plugin to release any active
-                        blocks. The dashboard's <strong>Stop now</strong> button always applies a hard
-                        block (until you press Allow again, grant bonus, or midnight), regardless of this
-                        setting — using the mode chosen below.
+                        When a kid is over limit, the plugin blocks that user at the server so playback
+                        stops even on stubborn clients, and restores access automatically when they're
+                        back under limit, granted bonus, or at midnight.
                     </div>
                     <div class="selectContainer" style="margin-top: 1em;">
                         <label class="selectLabel" for="hardEnforcementMode">Hard-block mode</label>
@@ -80,18 +103,28 @@
                             <option value="DisablePlayback">Block playback only — kid can still browse</option>
                         </select>
                     </div>
-                    <div class="fieldDescription">
-                        <strong>Block all access</strong> flips the kid's native access schedule to "never
-                        allowed": every request is rejected, so even a stream that's already playing dies
-                        within seconds — but the kid is locked out of Jellyfin entirely (browsing too, and
-                        some clients drop to an error/login screen).
-                        <strong>Block playback only</strong> is gentler: it turns off the user's
-                        media-playback permission, so nothing new can start (including auto-play of the
-                        next episode) and the kid can still browse with a friendly "playback not allowed"
-                        error — but a client that ignores the Stop command may finish the episode it is
-                        currently direct-playing. Transcoded streams are torn down server-side in both
-                        modes.
-                    </div>
+                    <details class="kl-help fieldDescription">
+                        <summary>How the two modes differ, and when to turn this off</summary>
+                        <p>
+                            <strong>Block all access</strong> flips the kid's native access schedule to "never
+                            allowed": every request is rejected, so even a stream that's already playing dies
+                            within seconds — but the kid is locked out of Jellyfin entirely (browsing too, and
+                            some clients drop to an error/login screen).
+                        </p>
+                        <p>
+                            <strong>Block playback only</strong> is gentler: it turns off the user's
+                            media-playback permission, so nothing new can start (including auto-play of the
+                            next episode) and the kid can still browse with a friendly "playback not allowed"
+                            error — but a client that ignores the Stop command may finish the episode it is
+                            currently direct-playing. Transcoded streams are torn down server-side in both modes.
+                        </p>
+                        <p>
+                            Turn hard enforcement off (and Save) before uninstalling the plugin to release any
+                            active blocks. The dashboard's <strong>Stop now</strong> button always applies a hard
+                            block (until you press Allow again, grant bonus, or midnight), regardless of the
+                            checkbox above — using the mode chosen here.
+                        </p>
+                    </details>
                 </div>
 
                 </div><!-- /tab general -->
@@ -99,11 +132,23 @@
                 <div class="kidsLimitTabPage" data-tab="presets">
                 <div class="verticalSection">
                     <h3 class="sectionTitle">Presets</h3>
-                    <div class="fieldDescription">Leave a cap blank for "unlimited".</div>
+                    <div class="fieldDescription">
+                        Reusable sets of caps you assign to weekdays per kid. Click a preset to edit it.
+                        Leave a cap blank for "unlimited".
+                    </div>
                     <div id="presetsContainer"></div>
-                    <button is="emby-button" type="button" id="btnAddPreset" class="raised block">
-                        <span>Add preset</span>
-                    </button>
+                    <div class="kl-presetActions">
+                        <button is="emby-button" type="button" id="btnAddPreset" class="raised">
+                            <span>Add preset</span>
+                        </button>
+                        <button is="emby-button" type="button" id="btnRestorePresets" class="raised button-cancel">
+                            <span>Restore built-in presets</span>
+                        </button>
+                    </div>
+                    <div class="fieldDescription">
+                        "Restore built-in presets" re-adds any of School Day / Weekend / Holiday / Recovery Day
+                        that are missing. It never creates duplicates.
+                    </div>
                 </div>
                 </div><!-- /tab presets -->
 
@@ -111,7 +156,8 @@
                 <div class="verticalSection">
                     <h3 class="sectionTitle">Per-user limits</h3>
                     <div class="fieldDescription">
-                        Enable a kid, then assign a preset to each weekday. Date overrides beat the weekly schedule.
+                        Click a kid to enable limits and assign a preset to each weekday. Date overrides beat
+                        the weekly schedule.
                     </div>
                     <div id="usersContainer"></div>
                 </div>
@@ -134,6 +180,15 @@
         var presets = [];
         var userConfigs = [];
 
+        // Mirrors PluginConfiguration.DefaultPresets() on the server — used only by the
+        // "Restore built-in presets" button to re-add missing built-ins client-side.
+        var BUILTIN_PRESETS = [
+            { Id: 'school-day', Name: 'School Day', DailyCapMinutes: 60, SessionCapMinutes: 45, MorningCapMinutes: 0, AfternoonCapMinutes: 30, EveningCapMinutes: 30 },
+            { Id: 'weekend', Name: 'Weekend', DailyCapMinutes: 120, SessionCapMinutes: 60, MorningCapMinutes: 60, AfternoonCapMinutes: null, EveningCapMinutes: 60 },
+            { Id: 'holiday', Name: 'Holiday', DailyCapMinutes: 150, SessionCapMinutes: 90, MorningCapMinutes: null, AfternoonCapMinutes: null, EveningCapMinutes: 60 },
+            { Id: 'recovery-day', Name: 'Recovery Day', DailyCapMinutes: null, SessionCapMinutes: null, MorningCapMinutes: null, AfternoonCapMinutes: null, EveningCapMinutes: null }
+        ];
+
         var WEEKDAYS = [
             ['MondayPresetId', 'Mon'], ['TuesdayPresetId', 'Tue'], ['WednesdayPresetId', 'Wed'],
             ['ThursdayPresetId', 'Thu'], ['FridayPresetId', 'Fri'], ['SaturdayPresetId', 'Sat'],
@@ -152,6 +207,20 @@
         function normId(id) { return (id || '').replace(/-/g, '').toLowerCase(); }
         function esc(s) { return (s || '').replace(/[&<>"]/g, function (c) {
             return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+        function capLabel(v) { return (v === null || v === undefined || v === '') ? '∞' : (v + 'm'); }
+
+        function presetSummary(p) {
+            return 'Daily ' + capLabel(p.DailyCapMinutes) + ' · Session ' + capLabel(p.SessionCapMinutes) +
+                ' · AM ' + capLabel(p.MorningCapMinutes) + ' · PM ' + capLabel(p.AfternoonCapMinutes) +
+                ' · Eve ' + capLabel(p.EveningCapMinutes);
+        }
+
+        function userSummary(cfg) {
+            if (!cfg.Enabled) { return 'Limits off'; }
+            var n = 0;
+            WEEKDAYS.forEach(function (wd) { if (cfg[wd[0]]) { n++; } });
+            return 'Limits on · ' + n + '/7 weekdays scheduled';
+        }
 
         function presetOptions(selectedId) {
             var opts = '<option value="">— none / unlimited —</option>';
@@ -162,10 +231,26 @@
             return opts;
         }
 
-        function renderPresets() {
+        // Toggle a collapsible card open/closed. Clicks on the inner form fields are ignored so
+        // typing in an input doesn't collapse the card.
+        function wireCardHeaders(container) {
+            container.querySelectorAll('.kl-cardHeader').forEach(function (hd) {
+                hd.addEventListener('click', function () {
+                    this.closest('.kl-card').classList.toggle('kl-open');
+                });
+            });
+        }
+
+        function renderPresets(openIdx) {
             var html = '';
             presets.forEach(function (p, i) {
-                html += '<div class="paperList" style="padding:1em;margin-bottom:1em;" data-idx="' + i + '">' +
+                var open = (i === openIdx) ? ' kl-open' : '';
+                html += '<div class="paperList kl-card' + open + '" data-idx="' + i + '">' +
+                    '<div class="kl-cardHeader"><div class="kl-headText">' +
+                    '<div class="kl-headTitle">' + esc(p.Name || 'Preset') + '</div>' +
+                    '<div class="kl-headSummary">' + presetSummary(p) + '</div></div>' +
+                    '<span class="kl-caret">&#9662;</span></div>' +
+                    '<div class="kl-cardBody">' +
                     '<div class="inputContainer"><label class="inputLabel inputLabelUnfocused">Name</label>' +
                     '<input is="emby-input" type="text" class="presetName" value="' + esc(p.Name) + '" /></div>' +
                     capField('Daily cap (min)', 'DailyCapMinutes', p.DailyCapMinutes) +
@@ -174,16 +259,20 @@
                     capField('Afternoon cap (min)', 'AfternoonCapMinutes', p.AfternoonCapMinutes) +
                     capField('Evening cap (min)', 'EveningCapMinutes', p.EveningCapMinutes) +
                     '<button is="emby-button" type="button" class="raised button-cancel block btnRemovePreset">' +
-                    '<span>Remove preset</span></button></div>';
+                    '<span>Remove preset</span></button></div></div>';
             });
-            page.querySelector('#presetsContainer').innerHTML = html;
+            var container = page.querySelector('#presetsContainer');
+            container.innerHTML = html || '<div class="fieldDescription">No presets yet. Add one, or restore the built-ins.</div>';
+            wireCardHeaders(container);
 
-            page.querySelectorAll('.btnRemovePreset').forEach(function (btn) {
-                btn.addEventListener('click', function () {
+            container.querySelectorAll('.btnRemovePreset').forEach(function (btn) {
+                btn.addEventListener('click', function (e) {
+                    e.stopPropagation();
                     var idx = parseInt(this.closest('[data-idx]').getAttribute('data-idx'), 10);
                     collectPresets();
                     presets.splice(idx, 1);
                     renderPresets();
+                    syncUsersFromDom();
                     renderUsers();
                 });
             });
@@ -224,8 +313,16 @@
                     overridesHtml += overrideRow(o.Date, o.PresetId);
                 });
 
-                html += '<div class="paperList" style="padding:1em;margin-bottom:1em;" data-userid="' + esc(u.Id) + '">' +
-                    '<h4 style="margin:0 0 .5em;">' + esc(u.Name) + '</h4>' +
+                var badge = cfg.Enabled
+                    ? '<span class="kl-badge kl-on">Limited</span>'
+                    : '<span class="kl-badge">Unlimited</span>';
+
+                html += '<div class="paperList kl-card" data-userid="' + esc(u.Id) + '">' +
+                    '<div class="kl-cardHeader"><div class="kl-headText">' +
+                    '<div class="kl-headTitle">' + esc(u.Name) + '</div>' +
+                    '<div class="kl-headSummary kl-userSummary">' + userSummary(cfg) + '</div></div>' +
+                    badge + '<span class="kl-caret">&#9662;</span></div>' +
+                    '<div class="kl-cardBody">' +
                     '<label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="userEnabled"' +
                     (cfg.Enabled ? ' checked' : '') + ' /><span>Enable limits</span></label>' +
                     '<div class="inputContainer"><label class="inputLabel inputLabelUnfocused">Warn minutes before limit</label>' +
@@ -234,18 +331,21 @@
                     '<div style="margin:.5em 0;"><strong>Weekly schedule</strong><br/>' + weekdayHtml + '</div>' +
                     '<div><strong>Date overrides</strong><div class="overridesContainer">' + overridesHtml + '</div>' +
                     '<button is="emby-button" type="button" class="raised block btnAddOverride"><span>Add date override</span></button></div>' +
-                    '</div>';
+                    '</div></div>';
             });
-            page.querySelector('#usersContainer').innerHTML = html;
+            var container = page.querySelector('#usersContainer');
+            container.innerHTML = html;
+            wireCardHeaders(container);
 
-            page.querySelectorAll('.btnAddOverride').forEach(function (btn) {
-                btn.addEventListener('click', function () {
-                    var container = this.previousElementSibling; // overridesContainer
-                    container.insertAdjacentHTML('beforeend', overrideRow('', ''));
-                    wireOverrideRemovals(container);
+            container.querySelectorAll('.btnAddOverride').forEach(function (btn) {
+                btn.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    var overrideContainer = this.previousElementSibling; // overridesContainer
+                    overrideContainer.insertAdjacentHTML('beforeend', overrideRow('', ''));
+                    wireOverrideRemovals(overrideContainer);
                 });
             });
-            page.querySelectorAll('.overridesContainer').forEach(wireOverrideRemovals);
+            container.querySelectorAll('.overridesContainer').forEach(wireOverrideRemovals);
         }
 
         function overrideRow(date, presetId) {
@@ -257,7 +357,7 @@
 
         function wireOverrideRemovals(container) {
             container.querySelectorAll('.btnRemoveOverride').forEach(function (btn) {
-                btn.onclick = function () { this.closest('.overrideRow').remove(); };
+                btn.onclick = function (e) { e.stopPropagation(); this.closest('.overrideRow').remove(); };
             });
         }
 
@@ -272,7 +372,7 @@
             var result = [];
             page.querySelectorAll('#usersContainer [data-userid]').forEach(function (card) {
                 var userId = card.getAttribute('data-userid');
-                var name = card.querySelector('h4').textContent;
+                var name = card.querySelector('.kl-headTitle').textContent;
                 var cfg = {
                     UserId: userId,
                     UserName: name,
@@ -291,6 +391,14 @@
                 result.push(cfg);
             });
             return result;
+        }
+
+        // Pull the current per-user edits from the DOM into state so re-rendering the users list
+        // (e.g. after a preset changes) doesn't discard unsaved changes.
+        function syncUsersFromDom() {
+            if (page.querySelector('#usersContainer [data-userid]')) {
+                userConfigs = collectUsers();
+            }
         }
 
         function showTab(name) {
@@ -352,7 +460,23 @@
                 collectPresets();
                 presets.push({ Id: '', Name: 'New preset', DailyCapMinutes: null, SessionCapMinutes: null,
                     MorningCapMinutes: null, AfternoonCapMinutes: null, EveningCapMinutes: null });
+                renderPresets(presets.length - 1); // open the new one for editing
+                syncUsersFromDom();
+                renderUsers();
+            });
+
+            page.querySelector('#btnRestorePresets').addEventListener('click', function () {
+                collectPresets();
+                BUILTIN_PRESETS.forEach(function (bp) {
+                    var exists = presets.some(function (p) { return normId(p.Id) === normId(bp.Id); });
+                    if (!exists) {
+                        var copy = {};
+                        for (var k in bp) { if (bp.hasOwnProperty(k)) { copy[k] = bp[k]; } }
+                        presets.push(copy);
+                    }
+                });
                 renderPresets();
+                syncUsersFromDom();
                 renderUsers();
             });
 

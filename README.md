@@ -137,10 +137,12 @@ description, and target ABI used in the manifest.
 - **Parent API token** — shared secret for the REST API (blank = API disabled).
 - **Presets** — reusable named limit sets (daily / session / per-window caps;
   blank = unlimited). Ships with *School Day*, *Weekend*, *Holiday*,
-  *Recovery Day*.
-- **Per-user limits** — enable a kid, assign a preset to each weekday, add
-  date overrides (sick day / holiday), set the warn-minutes threshold. Users
-  left disabled are unlimited adults.
+  *Recovery Day*; each preset is a collapsible card (click to edit), and
+  *Restore built-in presets* re-adds any of the four that are missing without
+  creating duplicates.
+- **Per-user limits** — each kid is a collapsible card: enable them, assign a
+  preset to each weekday, add date overrides (sick day / holiday), and set the
+  warn-minutes threshold. Users left disabled are unlimited adults.
 
 ## Parent dashboard
 
