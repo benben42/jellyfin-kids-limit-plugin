@@ -35,6 +35,7 @@ public class RewardsController : ControllerBase
     private readonly StateStore _store;
     private readonly IUserManager _userManager;
     private readonly ILibraryManager _libraryManager;
+    private readonly NotificationService _notifications;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RewardsController"/> class.
@@ -44,18 +45,21 @@ public class RewardsController : ControllerBase
     /// <param name="store">Daily state store.</param>
     /// <param name="userManager">User manager.</param>
     /// <param name="libraryManager">Library manager.</param>
+    /// <param name="notifications">Push-notification fan-out.</param>
     public RewardsController(
         RewardsService rewards,
         WalletStore wallets,
         StateStore store,
         IUserManager userManager,
-        ILibraryManager libraryManager)
+        ILibraryManager libraryManager,
+        NotificationService notifications)
     {
         _rewards = rewards;
         _wallets = wallets;
         _store = store;
         _userManager = userManager;
         _libraryManager = libraryManager;
+        _notifications = notifications;
     }
 
     private PluginConfiguration Config =>
@@ -310,6 +314,25 @@ public class RewardsController : ControllerBase
                 x.Title.CoinCost,
             })
             .ToList<object>();
+    }
+
+    /// <summary>Sends a test notification to every enabled target (settings page "Test" button).</summary>
+    /// <param name="token">Parent shared secret.</param>
+    /// <returns>How many targets succeeded out of how many were attempted.</returns>
+    [HttpPost("notify/test")]
+    [Produces("application/json")]
+    public async Task<ActionResult<object>> TestNotifications([FromQuery] string? token = null)
+    {
+        if (!ParentAuthorized(token))
+        {
+            return Unauthorized();
+        }
+
+        var (succeeded, attempted) = await _notifications.SendAsync(
+            Config,
+            "Kids Watch-Time 🪙",
+            "Test notification — the rewards system can reach you here.").ConfigureAwait(false);
+        return new { Succeeded = succeeded, Attempted = attempted };
     }
 
     // ------------------------------------------------------------------ kid API

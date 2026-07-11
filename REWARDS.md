@@ -73,9 +73,13 @@ remote (D-pad). Everything is pictures, emoji, counts and sounds.
 
 ## Notifications
 
-Optional `NtfyTopicUrl` (e.g. `https://ntfy.sh/my-secret-topic`): the plugin
-POSTs a message when a claim is made ("Emma claims Dishwasher 🪙3"), so the
-parent's phone pings while the kid waits. Approval happens on the dashboard.
+Chore claims fan out to a configurable list of `NotificationTargets`
+("Emma claims Dishwasher 🪙3"), so the parent's phone pings while the kid
+waits; approval happens on the dashboard. Supported providers: **ntfy,
+Pushover, Gotify, Discord and Slack incoming webhooks, Telegram bots, an
+Apprise API server** (which relays to 100+ further services), and a **generic
+JSON webhook** (`{"title","message"}`). A test button in settings
+(`POST /KidsLimit/notify/test`) verifies delivery.
 
 ## Storage
 

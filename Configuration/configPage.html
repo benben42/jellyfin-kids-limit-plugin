@@ -185,14 +185,31 @@
                         <label class="inputLabel inputLabelUnfocused" for="maxRedeemCoinsPerDay">Max coins redeemable per day (0 = unlimited)</label>
                         <input is="emby-input" type="number" min="0" id="maxRedeemCoinsPerDay" />
                     </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="ntfyTopicUrl">ntfy topic URL for claim notifications (optional)</label>
-                        <input is="emby-input" type="url" id="ntfyTopicUrl" placeholder="https://ntfy.sh/my-secret-topic" />
-                    </div>
+                </div>
+
+                <div class="verticalSection">
+                    <h3 class="sectionTitle">Claim notifications</h3>
                     <div class="fieldDescription">
-                        When set, every chore claim POSTs a push notification to this ntfy topic so your
-                        phone pings while the kid waits for approval on the dashboard.
+                        When the kid claims a chore, a push notification is sent to every target below
+                        so your phone pings while she waits for approval. Which fields a target uses:
+                        <strong>ntfy</strong> — URL = topic URL, token optional ·
+                        <strong>Pushover</strong> — token = app token, user = user key ·
+                        <strong>Gotify</strong> — URL = server, token = app token ·
+                        <strong>Discord / Slack</strong> — URL = incoming webhook ·
+                        <strong>Telegram</strong> — token = bot token, user = chat id ·
+                        <strong>Apprise API</strong> — URL = notify endpoint (…/notify/mykey) ·
+                        <strong>Webhook</strong> — URL gets JSON <code>{"title","message"}</code>.
                     </div>
+                    <div id="notifyContainer"></div>
+                    <div class="kl-presetActions">
+                        <button is="emby-button" type="button" id="btnAddNotify" class="raised">
+                            <span>Add notification target</span>
+                        </button>
+                        <button is="emby-button" type="button" id="btnTestNotify" class="raised button-cancel">
+                            <span>Send test notification</span>
+                        </button>
+                    </div>
+                    <div id="notifyTestResult" class="fieldDescription"></div>
                 </div>
 
                 <div class="verticalSection">
@@ -243,6 +260,9 @@
         var chores = [];
         var refItemIds = [];
         var refResolved = {}; // itemId -> {Name, Type, RuntimeMinutes, CoinCost}
+        var notifyTargets = [];
+
+        var NOTIFY_TYPES = ['Ntfy', 'Pushover', 'Gotify', 'Discord', 'Slack', 'Telegram', 'Apprise', 'Webhook'];
 
         // Mirrors PluginConfiguration.DefaultPresets() on the server — used only by the
         // "Restore built-in presets" button to re-add missing built-ins client-side.
@@ -505,6 +525,49 @@
             });
         }
 
+        function renderNotifyTargets() {
+            var html = '';
+            notifyTargets.forEach(function (t, i) {
+                var opts = NOTIFY_TYPES.map(function (n) {
+                    return '<option value="' + n + '"' + (t.Type === n ? ' selected' : '') + '>' + n + '</option>';
+                }).join('');
+                html += '<div class="paperList notifyRow" data-idx="' + i + '" style="padding:.6em 1em;margin-bottom:.4em;' +
+                    'display:flex;flex-wrap:wrap;gap:8px;align-items:center;">' +
+                    '<select is="emby-select" class="ntType" style="width:8em;">' + opts + '</select>' +
+                    '<input is="emby-input" type="text" class="ntUrl" value="' + esc(t.Url) + '" placeholder="URL" ' +
+                    'style="flex:2 1 14em;min-width:10em;" />' +
+                    '<input is="emby-input" type="text" class="ntToken" value="' + esc(t.Token) + '" placeholder="token" ' +
+                    'style="flex:1 1 8em;min-width:6em;" />' +
+                    '<input is="emby-input" type="text" class="ntUser" value="' + esc(t.UserKey) + '" placeholder="user / chat id" ' +
+                    'style="flex:1 1 8em;min-width:6em;" />' +
+                    '<label class="checkboxContainer" style="margin:0;"><input is="emby-checkbox" type="checkbox" class="ntEnabled"' +
+                    (t.Enabled !== false ? ' checked' : '') + ' /><span>On</span></label>' +
+                    '<button is="emby-button" type="button" class="raised button-cancel btnRemoveNotify"><span>×</span></button>' +
+                    '</div>';
+            });
+            var container = page.querySelector('#notifyContainer');
+            container.innerHTML = html || '<div class="fieldDescription">No targets yet — claims will not ping your phone.</div>';
+            container.querySelectorAll('.btnRemoveNotify').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    var idx = parseInt(this.closest('[data-idx]').getAttribute('data-idx'), 10);
+                    collectNotifyTargets();
+                    notifyTargets.splice(idx, 1);
+                    renderNotifyTargets();
+                });
+            });
+        }
+
+        function collectNotifyTargets() {
+            page.querySelectorAll('#notifyContainer .notifyRow').forEach(function (row, i) {
+                var t = notifyTargets[i];
+                t.Type = row.querySelector('.ntType').value;
+                t.Url = row.querySelector('.ntUrl').value.trim();
+                t.Token = row.querySelector('.ntToken').value.trim();
+                t.UserKey = row.querySelector('.ntUser').value.trim();
+                t.Enabled = row.querySelector('.ntEnabled').checked;
+            });
+        }
+
         function refInfoText(id) {
             var r = refResolved[normId(id)];
             if (!r) { return id; }
@@ -644,11 +707,12 @@
                 page.querySelector('#bankCapCoins').value = cfg.BankCapCoins != null ? cfg.BankCapCoins : 24;
                 page.querySelector('#maxRedeemCoinsPerDay').value =
                     cfg.MaxRedeemCoinsPerDay != null ? cfg.MaxRedeemCoinsPerDay : 6;
-                page.querySelector('#ntfyTopicUrl').value = cfg.NtfyTopicUrl || '';
+                notifyTargets = cfg.NotificationTargets || [];
 
                 renderPresets();
                 renderUsers();
                 renderChores();
+                renderNotifyTargets();
                 renderRefTitles();
                 resolveRefTitles();
                 Dashboard.hideLoadingMsg();
@@ -659,6 +723,7 @@
             Dashboard.showLoadingMsg();
             collectPresets();
             collectChores();
+            collectNotifyTargets();
             ApiClient.getPluginConfiguration(pluginId).then(function (cfg) {
                 cfg.MiddayStartMinutes = timeToMinutes(page.querySelector('#middayStart').value);
                 cfg.EveningStartMinutes = timeToMinutes(page.querySelector('#eveningStart').value);
@@ -670,9 +735,9 @@
                 cfg.CoinMinutes = parseInt(page.querySelector('#coinMinutes').value, 10) || 5;
                 cfg.BankCapCoins = parseInt(page.querySelector('#bankCapCoins').value, 10) || 0;
                 cfg.MaxRedeemCoinsPerDay = parseInt(page.querySelector('#maxRedeemCoinsPerDay').value, 10) || 0;
-                cfg.NtfyTopicUrl = page.querySelector('#ntfyTopicUrl').value.trim();
                 cfg.Chores = chores;
                 cfg.ReferenceItemIds = refItemIds;
+                cfg.NotificationTargets = notifyTargets;
                 ApiClient.updatePluginConfiguration(pluginId, cfg).then(function (r) {
                     Dashboard.processPluginConfigurationUpdateResult(r);
                 });
@@ -719,6 +784,29 @@
                 collectChores();
                 chores.push({ Id: '', Name: '', Icon: '', Coins: 1, MaxPerDay: 1, Enabled: true });
                 renderChores();
+            });
+
+            page.querySelector('#btnAddNotify').addEventListener('click', function () {
+                collectNotifyTargets();
+                notifyTargets.push({ Type: 'Ntfy', Url: '', Token: '', UserKey: '', Enabled: true });
+                renderNotifyTargets();
+            });
+
+            page.querySelector('#btnTestNotify').addEventListener('click', function () {
+                var out = page.querySelector('#notifyTestResult');
+                if (!page.querySelector('#bonusApiToken').value.trim()) {
+                    out.textContent = 'Set the API token on the General tab first.';
+                    return;
+                }
+                out.textContent = 'Save the settings first if you changed targets… sending test.';
+                var url = ApiClient.getUrl('KidsLimit/notify/test') +
+                    '?token=' + encodeURIComponent(page.querySelector('#bonusApiToken').value.trim());
+                ApiClient.ajax({ type: 'POST', url: url, dataType: 'json' }).then(function (r) {
+                    out.textContent = 'Test sent: ' + r.Succeeded + '/' + r.Attempted + ' target(s) succeeded.' +
+                        (r.Attempted === 0 ? ' (No enabled targets are saved yet — press Save first.)' : '');
+                }, function () {
+                    out.textContent = 'Test failed — is the API token saved?';
+                });
             });
 
             page.querySelector('#btnRefSearch').addEventListener('click', searchRefTitles);

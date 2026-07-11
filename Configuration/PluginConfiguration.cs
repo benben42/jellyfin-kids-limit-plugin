@@ -32,7 +32,6 @@ public class PluginConfiguration : BasePluginConfiguration
         CoinMinutes = 5;
         BankCapCoins = 24;
         MaxRedeemCoinsPerDay = 6;
-        NtfyTopicUrl = string.Empty;
 
         // IMPORTANT: do NOT seed the built-in presets here. The XML serializer *appends*
         // to a collection that the constructor already populated instead of replacing it,
@@ -43,6 +42,7 @@ public class PluginConfiguration : BasePluginConfiguration
         Users = new List<UserLimitConfig>();
         Chores = new List<Chore>();
         ReferenceItemIds = new List<string>();
+        NotificationTargets = new List<NotificationTarget>();
     }
 
     /// <summary>
@@ -133,10 +133,11 @@ public class PluginConfiguration : BasePluginConfiguration
     public int MaxRedeemCoinsPerDay { get; set; }
 
     /// <summary>
-    /// Gets or sets an optional ntfy topic URL (e.g. https://ntfy.sh/my-secret-topic).
-    /// When set, chore claims POST a push notification there so the parent's phone pings.
+    /// Gets or sets the push-notification destinations for rewards events (chore claims).
+    /// Supports ntfy, Pushover, Gotify, Discord/Slack webhooks, Telegram, an Apprise API
+    /// server, and generic JSON webhooks — see <see cref="NotificationTarget"/>.
     /// </summary>
-    public string NtfyTopicUrl { get; set; }
+    public List<NotificationTarget> NotificationTargets { get; set; }
 
     /// <summary>Gets or sets the parent-defined chores the kid can earn coins for.</summary>
     public List<Chore> Chores { get; set; }

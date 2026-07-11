@@ -19,6 +19,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<WalletStore>();
         serviceCollection.AddSingleton<HardBlockEnforcer>();
         serviceCollection.AddSingleton<PlaybackTerminator>();
+        serviceCollection.AddSingleton<NotificationService>();
         serviceCollection.AddSingleton<RewardsService>();
         serviceCollection.AddHostedService<WatchTimeTracker>();
     }

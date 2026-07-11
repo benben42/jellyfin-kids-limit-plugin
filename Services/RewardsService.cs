@@ -1,8 +1,6 @@
 using System;
 using System.Globalization;
 using System.Linq;
-using System.Net.Http;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.KidsLimit.Configuration;
@@ -43,7 +41,7 @@ public sealed class RewardsService
     private readonly ISessionManager _sessionManager;
     private readonly ILibraryManager _libraryManager;
     private readonly HardBlockEnforcer _enforcer;
-    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly NotificationService _notifications;
     private readonly ILogger<RewardsService> _logger;
 
     /// <summary>
@@ -54,7 +52,7 @@ public sealed class RewardsService
     /// <param name="sessionManager">Session manager.</param>
     /// <param name="libraryManager">Library manager.</param>
     /// <param name="enforcer">Hard-block enforcer.</param>
-    /// <param name="httpClientFactory">HTTP client factory (ntfy notifications).</param>
+    /// <param name="notifications">Push-notification fan-out.</param>
     /// <param name="logger">Logger.</param>
     public RewardsService(
         WalletStore wallets,
@@ -62,7 +60,7 @@ public sealed class RewardsService
         ISessionManager sessionManager,
         ILibraryManager libraryManager,
         HardBlockEnforcer enforcer,
-        IHttpClientFactory httpClientFactory,
+        NotificationService notifications,
         ILogger<RewardsService> logger)
     {
         _wallets = wallets;
@@ -70,7 +68,7 @@ public sealed class RewardsService
         _sessionManager = sessionManager;
         _libraryManager = libraryManager;
         _enforcer = enforcer;
-        _httpClientFactory = httpClientFactory;
+        _notifications = notifications;
         _logger = logger;
     }
 
@@ -180,7 +178,10 @@ public sealed class RewardsService
 
         if (claim is not null)
         {
-            Notify(config, $"{userName}: {chore.Name}", $"Claims {chore.Coins} coin(s) — approve on the dashboard.");
+            _notifications.Send(
+                config,
+                $"{userName}: {chore.Name}",
+                $"Claims {chore.Coins} coin(s) — approve on the dashboard.");
         }
 
         return claim;
@@ -484,32 +485,6 @@ public sealed class RewardsService
         return false;
     }
 
-    private void Notify(PluginConfiguration config, string title, string message)
-    {
-        var url = config.NtfyTopicUrl;
-        if (string.IsNullOrWhiteSpace(url))
-        {
-            return;
-        }
-
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                using var client = _httpClientFactory.CreateClient();
-                using var content = new StringContent(message, Encoding.UTF8, "text/plain");
-                using var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = content };
-                request.Headers.TryAddWithoutValidation("Title", title);
-                request.Headers.TryAddWithoutValidation("Tags", "coin");
-                using var response = await client.SendAsync(request).ConfigureAwait(false);
-                response.EnsureSuccessStatusCode();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "KidsLimit: ntfy notification failed.");
-            }
-        });
-    }
 }
 
 /// <summary>Result of a redeem attempt.</summary>

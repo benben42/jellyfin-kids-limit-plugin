@@ -174,8 +174,9 @@ Kids can **earn coins for chores and bank them** — the balance never resets at
 midnight — then spend them later as extra watch time (redeemed time flows
 through the normal bonus mechanism). A TV-friendly, **picture-only kid page**
 (`/KidsLimit/kid?token=…`, per-kid token from settings) lets a non-reading
-child claim chores (emoji tiles → parent approves on the dashboard, optional
-[ntfy](https://ntfy.sh) push to your phone) and redeem coins by picking the
+child claim chores (emoji tiles → parent approves on the dashboard, with push
+notifications to your phone via ntfy / Pushover / Gotify / Discord / Slack /
+Telegram / Apprise API / generic webhook) and redeem coins by picking the
 poster of a favourite title — the plugin grants the time and (best effort)
 starts playback on her active session. `android-tv/` contains a minimal
 sideloadable WebView wrapper so the kid page is an app on the TV launcher.
@@ -202,6 +203,7 @@ Auth is the shared token via `?token=` or the `X-KidsLimit-Token` header.
 | `POST` | `/KidsLimit/claims/approve?user=&claimId=&token=` | Approve a kid's chore claim |
 | `POST` | `/KidsLimit/claims/reject?user=&claimId=&token=` | Reject a kid's chore claim |
 | `GET`  | `/KidsLimit/items/search?q=&token=` | Library search for reference titles |
+| `POST` | `/KidsLimit/notify/test?token=` | Send a test push to all notification targets |
 
 Kid self-service endpoints (`/KidsLimit/kid…`) use the per-user kid token
 instead and only allow viewing the own wallet, claiming a chore and redeeming
