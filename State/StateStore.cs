@@ -38,6 +38,14 @@ public class StateStore
     /// <summary>Gets or sets the minimum seconds between debounced flushes per user.</summary>
     public double DebounceSeconds { get; set; } = 20;
 
+    /// <summary>
+    /// Gets or sets a callback invoked with a snapshot of each finishing day just before
+    /// its counters are reset by the midnight rollover. Used by the rewards service to
+    /// refund redeemed-but-unwatched coins. Runs under the store lock — handlers must not
+    /// call back into this store.
+    /// </summary>
+    public Action<DailyState>? DayFinished { get; set; }
+
     /// <summary>Initializes the on-disk location. Must be called once at startup.</summary>
     /// <param name="dataDir">The plugin data folder.</param>
     public void Initialize(string dataDir)
@@ -118,12 +126,18 @@ public class StateStore
     /// <param name="userId">The user id.</param>
     /// <param name="localToday">Today's local date string.</param>
     /// <param name="seconds">Bonus seconds to add.</param>
-    public void GrantBonus(string userId, string localToday, long seconds)
+    /// <param name="fromWallet">True when the bonus was paid for with wallet coins, so the
+    /// midnight rollover knows how much is refundable.</param>
+    public void GrantBonus(string userId, string localToday, long seconds, bool fromWallet = false)
     {
         Mutate(userId, localToday, s =>
         {
             s.DailyBonusSeconds += seconds;
             s.SessionBonusSeconds += seconds;
+            if (fromWallet)
+            {
+                s.RedeemedSeconds += seconds;
+            }
 
             // Granting time also lifts a parent "Stop now" so the kid can play again.
             s.ManuallyStopped = false;
@@ -238,6 +252,20 @@ public class StateStore
             AppendHistory(state);
         }
 
+        // Let the rewards service refund redeemed-but-unwatched coins for the finishing
+        // day. Snapshot because the state object is reset right below.
+        if (!string.IsNullOrEmpty(state.Date) && state.RedeemedSeconds > 0 && DayFinished is { } finished)
+        {
+            try
+            {
+                finished(Clone(state));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "KidsLimit: DayFinished handler failed for {UserId}", state.UserId);
+            }
+        }
+
         _logger.LogInformation(
             "Rolling over daily state for {UserId}: {OldDate} -> {NewDate}",
             state.UserId,
@@ -251,6 +279,7 @@ public class StateStore
         state.SecondsEvening = 0;
         state.DailyBonusSeconds = 0;
         state.SessionBonusSeconds = 0;
+        state.RedeemedSeconds = 0;
         state.ManuallyStopped = false;
 
         // Keep active sessions but reset their per-day counters/flags.
@@ -342,6 +371,7 @@ public class StateStore
         SecondsEvening = s.SecondsEvening,
         DailyBonusSeconds = s.DailyBonusSeconds,
         SessionBonusSeconds = s.SessionBonusSeconds,
+        RedeemedSeconds = s.RedeemedSeconds,
         ManuallyStopped = s.ManuallyStopped,
         ActiveSessions = s.ActiveSessions.ToDictionary(
             kv => kv.Key,

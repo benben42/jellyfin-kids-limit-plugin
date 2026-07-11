@@ -29,6 +29,11 @@ public class PluginConfiguration : BasePluginConfiguration
         EnforceViaAccessSchedule = false;
         HardEnforcementMode = ModeAccessSchedule;
 
+        CoinMinutes = 5;
+        BankCapCoins = 24;
+        MaxRedeemCoinsPerDay = 6;
+        NtfyTopicUrl = string.Empty;
+
         // IMPORTANT: do NOT seed the built-in presets here. The XML serializer *appends*
         // to a collection that the constructor already populated instead of replacing it,
         // so seeding defaults in the constructor duplicated every built-in preset on each
@@ -36,6 +41,8 @@ public class PluginConfiguration : BasePluginConfiguration
         // Plugin.MigrateConfiguration seed the defaults exactly once on first run.
         Presets = new List<Preset>();
         Users = new List<UserLimitConfig>();
+        Chores = new List<Chore>();
+        ReferenceItemIds = new List<string>();
     }
 
     /// <summary>
@@ -106,6 +113,40 @@ public class PluginConfiguration : BasePluginConfiguration
     /// <see cref="UserLimitConfig.Enabled"/> = false) are treated as unlimited adults.
     /// </summary>
     public List<UserLimitConfig> Users { get; set; }
+
+    /// <summary>
+    /// Gets or sets how many minutes one reward coin is worth. Coins are the kid-facing
+    /// unit of the rewards system (REWARDS.md). Default 5.
+    /// </summary>
+    public int CoinMinutes { get; set; }
+
+    /// <summary>
+    /// Gets or sets the maximum coins a wallet can hold; earning past it is clamped.
+    /// Coins never expire, so this is the only anti-hoarding tool. 0 = unlimited.
+    /// </summary>
+    public int BankCapCoins { get; set; }
+
+    /// <summary>
+    /// Gets or sets the maximum coins that can be redeemed per local day, so a large
+    /// bank cannot be spent in one sitting. 0 = unlimited.
+    /// </summary>
+    public int MaxRedeemCoinsPerDay { get; set; }
+
+    /// <summary>
+    /// Gets or sets an optional ntfy topic URL (e.g. https://ntfy.sh/my-secret-topic).
+    /// When set, chore claims POST a push notification there so the parent's phone pings.
+    /// </summary>
+    public string NtfyTopicUrl { get; set; }
+
+    /// <summary>Gets or sets the parent-defined chores the kid can earn coins for.</summary>
+    public List<Chore> Chores { get; set; }
+
+    /// <summary>
+    /// Gets or sets library item ids (movies/series) used as "reference titles" on the
+    /// kid page: the wallet is visualised as posters ("Tom &amp; Jerry ×3") and redeeming
+    /// is picking a poster.
+    /// </summary>
+    public List<string> ReferenceItemIds { get; set; }
 
     /// <summary>
     /// Builds the shipped built-in presets. Used for first-run seeding and for the
