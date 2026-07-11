@@ -24,6 +24,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         : base(applicationPaths, xmlSerializer)
     {
         Instance = this;
+        MigrateConfiguration();
     }
 
     /// <summary>Gets the singleton instance.</summary>
@@ -78,6 +79,59 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// One-time configuration migration run at startup. Cleans up the built-in-preset
+    /// duplication caused by older builds (which seeded defaults in the config constructor,
+    /// so the XML serializer appended a fresh copy on every restart) and seeds the built-in
+    /// presets exactly once on a genuinely fresh install.
+    /// </summary>
+    private void MigrateConfiguration()
+    {
+        var config = Configuration;
+        var changed = false;
+
+        config.Presets ??= new List<Preset>();
+
+        // De-duplicate presets by id (keeping the first occurrence). Existing installs may
+        // already have accumulated several copies of each built-in from the old bug.
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var deduped = new List<Preset>(config.Presets.Count);
+        foreach (var preset in config.Presets)
+        {
+            var key = Normalize(preset.Id);
+            if (!string.IsNullOrEmpty(key) && !seen.Add(key))
+            {
+                changed = true; // a duplicate id — drop it
+                continue;
+            }
+
+            deduped.Add(preset);
+        }
+
+        if (changed)
+        {
+            config.Presets = deduped;
+        }
+
+        // Seed the built-in presets only on a genuinely fresh install (never seeded before
+        // and no presets present). This also stops future restarts from re-adding them.
+        if (!config.Initialized)
+        {
+            if (config.Presets.Count == 0)
+            {
+                config.Presets = PluginConfiguration.DefaultPresets();
+            }
+
+            config.Initialized = true;
+            changed = true;
+        }
+
+        if (changed)
+        {
+            SaveConfiguration();
+        }
     }
 
     private static string Normalize(string id) =>

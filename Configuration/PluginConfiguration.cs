@@ -28,7 +28,13 @@ public class PluginConfiguration : BasePluginConfiguration
         BonusApiToken = string.Empty;
         EnforceViaAccessSchedule = false;
         HardEnforcementMode = ModeAccessSchedule;
-        Presets = DefaultPresets();
+
+        // IMPORTANT: do NOT seed the built-in presets here. The XML serializer *appends*
+        // to a collection that the constructor already populated instead of replacing it,
+        // so seeding defaults in the constructor duplicated every built-in preset on each
+        // deserialize (i.e. every server restart / plugin update). Start empty and let
+        // Plugin.MigrateConfiguration seed the defaults exactly once on first run.
+        Presets = new List<Preset>();
         Users = new List<UserLimitConfig>();
     }
 
@@ -83,6 +89,14 @@ public class PluginConfiguration : BasePluginConfiguration
             : ModeAccessSchedule;
 
     /// <summary>
+    /// Gets or sets a value indicating whether one-time first-run seeding has happened.
+    /// Configs saved before this flag existed deserialize it as <c>false</c>; the plugin
+    /// migration then seeds the built-in presets (only if none are present) and flips this
+    /// to <c>true</c> so they are never re-seeded again.
+    /// </summary>
+    public bool Initialized { get; set; }
+
+    /// <summary>
     /// Gets or sets the reusable named limit presets.
     /// </summary>
     public List<Preset> Presets { get; set; }
@@ -93,7 +107,12 @@ public class PluginConfiguration : BasePluginConfiguration
     /// </summary>
     public List<UserLimitConfig> Users { get; set; }
 
-    private static List<Preset> DefaultPresets() => new()
+    /// <summary>
+    /// Builds the shipped built-in presets. Used for first-run seeding and for the
+    /// "Restore built-in presets" action on the config page.
+    /// </summary>
+    /// <returns>A fresh list of the built-in presets.</returns>
+    public static List<Preset> DefaultPresets() => new()
     {
         new Preset
         {
