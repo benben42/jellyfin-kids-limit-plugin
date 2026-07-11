@@ -160,6 +160,15 @@
 
     function render() {
         if (!state) { return; }
+
+        // The page refreshes every 20 s; remember which tile the D-pad was on so the
+        // re-render doesn't yank focus back to the first tile mid-navigation.
+        var focusKey = null;
+        var active = document.activeElement;
+        if (active && active.classList && active.classList.contains('tile')) {
+            focusKey = active.getAttribute('data-kind') + ':' + active.getAttribute('data-id');
+        }
+
         document.getElementById('kidName').textContent = state.Name;
         document.getElementById('jarCoins').textContent = coinRow(state.CoinBalance);
         document.getElementById('jarCount').textContent = state.CoinBalance;
@@ -190,6 +199,11 @@
         }).join('');
 
         if (!document.getElementById('overlay').classList.contains('open')) {
+            if (focusKey) {
+                var again = document.querySelector(
+                    '.tile[data-kind="' + focusKey.split(':')[0] + '"][data-id="' + focusKey.split(':')[1] + '"]');
+                if (again) { again.focus(); return; }
+            }
             focusFirst();
         }
     }
