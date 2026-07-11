@@ -29,6 +29,7 @@ namespace Jellyfin.Plugin.KidsLimit.Api;
 public class RewardsController : ControllerBase
 {
     private const int LedgerTailLength = 40;
+    private const int LibraryPageSize = 60;
 
     private readonly RewardsService _rewards;
     private readonly WalletStore _wallets;
@@ -399,19 +400,10 @@ public class RewardsController : ControllerBase
                 string.Equals(p.Date, today, StringComparison.Ordinal)),
         }).ToList();
 
-        var titles = config.ReferenceItemIds
-            .Select(id => _rewards.ResolveReferenceTitle(config, id))
-            .Where(t => t is not null)
-            .Select(t => new
-            {
-                ItemId = t!.ItemId.ToString("N", CultureInfo.InvariantCulture),
-                t.Name,
-                t.IsSeries,
-                t.RuntimeMinutes,
-                t.CoinCost,
-                Affordable = t.CoinCost <= redeemableNow,
-            })
-            .ToList();
+        // Watch options are the kid's OWN accessible library as posters (respecting their
+        // Jellyfin library access + parental rating), so it never looks like "only these
+        // few shows". The first page ships with the state; more pages come from kid/library.
+        var (titles, titlesTotal) = LibraryPage(kid.Value.Guid, config, 0, LibraryPageSize);
 
         return new
         {
@@ -423,7 +415,34 @@ public class RewardsController : ControllerBase
             MaxRedeemCoinsPerDay = config.MaxRedeemCoinsPerDay,
             Chores = chores,
             Titles = titles,
+            TitlesTotal = titlesTotal,
+            PageSize = LibraryPageSize,
         };
+    }
+
+    /// <summary>
+    /// Returns a page of the kid's accessible library as poster tiles, so the watch grid
+    /// can lazily grow beyond the first page shipped with <see cref="KidState"/>.
+    /// </summary>
+    /// <param name="skip">How many items to skip.</param>
+    /// <param name="take">How many items to return (clamped).</param>
+    /// <param name="token">The per-user kid token.</param>
+    /// <returns>The page of poster tiles plus the total item count.</returns>
+    [HttpGet("kid/library")]
+    [Produces("application/json")]
+    public ActionResult<object> KidLibrary(
+        [FromQuery] int skip = 0,
+        [FromQuery] int take = LibraryPageSize,
+        [FromQuery] string? token = null)
+    {
+        var kid = ResolveKid(token);
+        if (kid is null)
+        {
+            return Unauthorized();
+        }
+
+        var (items, total) = LibraryPage(kid.Value.Guid, Config, skip, take);
+        return new { Items = items, Total = total };
     }
 
     /// <summary>Kid claims a chore (goes to the parent's pending queue).</summary>
@@ -462,11 +481,24 @@ public class RewardsController : ControllerBase
         }
 
         var config = Config;
-        var title = _rewards.ResolveReferenceTitle(config, itemId);
-        if (title is null || !config.ReferenceItemIds.Any(id =>
-                Guid.TryParse(id, out var g) && g == title.ItemId))
+        if (!Guid.TryParse(itemId, out var itemGuid))
         {
-            return NotFound("Not a reference title.");
+            return NotFound("Unknown item.");
+        }
+
+        // Only allow items the kid's Jellyfin user can actually see (library access +
+        // parental rating), so the token can't be used to unlock content out of scope.
+        var item = _libraryManager.GetItemById(itemGuid);
+        var user = _userManager.GetUserById(kid.Value.Guid);
+        if (item is null || user is null || !item.IsVisibleStandalone(user))
+        {
+            return NotFound("Not available.");
+        }
+
+        var title = _rewards.BuildTitle(config, item);
+        if (title is null)
+        {
+            return NotFound("No runtime.");
         }
 
         var outcome = _rewards.Redeem(config, IdN(kid.Value.Guid), title.CoinCost, title.Name);
@@ -489,7 +521,8 @@ public class RewardsController : ControllerBase
     [HttpGet("kid/image/{itemId}")]
     public ActionResult KidImage([FromRoute] string itemId, [FromQuery] string? token = null)
     {
-        if (ResolveKid(token) is null)
+        var kid = ResolveKid(token);
+        if (kid is null)
         {
             return Unauthorized();
         }
@@ -500,6 +533,12 @@ public class RewardsController : ControllerBase
         }
 
         var item = _libraryManager.GetItemById(guid);
+        var user = _userManager.GetUserById(kid.Value.Guid);
+        if (item is null || user is null || !item.IsVisibleStandalone(user))
+        {
+            return NotFound();
+        }
+
         while (item is not null)
         {
             var image = item.GetImageInfo(ImageType.Primary, 0);
@@ -527,6 +566,49 @@ public class RewardsController : ControllerBase
         };
 
     private static string IdN(Guid guid) => guid.ToString("N", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Builds a page of the kid's accessible movies/series as priced poster tiles. Passing
+    /// the user to the query makes Jellyfin apply that user's library access and parental
+    /// rating, so only content the child is allowed to see comes back.
+    /// </summary>
+    private (List<object> Items, int Total) LibraryPage(Guid userGuid, PluginConfiguration config, int skip, int take)
+    {
+        var user = _userManager.GetUserById(userGuid);
+        if (user is null)
+        {
+            return (new List<object>(), 0);
+        }
+
+        var query = new InternalItemsQuery(user)
+        {
+            IncludeItemTypes = new[] { BaseItemKind.Movie, BaseItemKind.Series },
+            Recursive = true,
+            IsVirtualItem = false,
+            ImageTypes = new[] { ImageType.Primary }, // only items with a poster to tap
+            // SortOrder moved to Jellyfin.Database.Implementations in 10.11 (same relocation
+            // noted for the User entity); fully-qualify so we don't add a brittle using.
+            OrderBy = new[] { (ItemSortBy.SortName, Jellyfin.Database.Implementations.Enums.SortOrder.Ascending) },
+            StartIndex = Math.Max(0, skip),
+            Limit = Math.Clamp(take, 1, 200),
+        };
+
+        var result = _libraryManager.GetItemsResult(query);
+        var items = result.Items
+            .Select(item => _rewards.BuildTitle(config, item))
+            .Where(t => t is not null)
+            .Select(t => (object)new
+            {
+                ItemId = t!.ItemId.ToString("N", CultureInfo.InvariantCulture),
+                t.Name,
+                t.IsSeries,
+                t.RuntimeMinutes,
+                t.CoinCost,
+            })
+            .ToList();
+
+        return (items, result.TotalRecordCount);
+    }
 
     private bool ParentAuthorized(string? token)
     {
