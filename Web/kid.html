@@ -7,87 +7,149 @@
 <style>
     /* Kid TV page (REWARDS.md): picture-only UI for a non-reading child driving an
        Android TV remote. Everything is big tiles, emoji, counts and sounds. The D-pad
-       arrives as arrow-key events in the WebView; focus is a huge glowing ring. */
+       arrives as arrow-key events in the WebView; focus is a huge glowing ring.
+       The watch grid is the child's OWN accessible Jellyfin library as posters, so it
+       never looks like "only these few shows" — she just taps a picture she knows. */
+    :root {
+        --bg1: #1b1140;
+        --bg2: #0d1030;
+        --card: #232a52;
+        --card2: #2b3468;
+        --accent: #ffd24a;
+        --accent-ink: #3a2a00;
+        --good: #58e08b;
+    }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { height: 100%; }
     body {
-        background: #0e1220; color: #fff; overflow-x: hidden;
-        font-family: -apple-system, Roboto, "Segoe UI", sans-serif;
-        padding: 2vh 3vw 4vh;
+        color: #fff; overflow-x: hidden;
+        font-family: "Baloo 2", "Segoe UI Rounded", -apple-system, Roboto, "Segoe UI", sans-serif;
+        padding: 2.2vh 3.2vw 5vh;
+        background:
+            radial-gradient(80vw 60vh at 12% -8%, rgba(120, 90, 255, .35), transparent 60%),
+            radial-gradient(70vw 55vh at 105% 10%, rgba(255, 120, 200, .28), transparent 55%),
+            linear-gradient(160deg, var(--bg1), var(--bg2));
+        background-attachment: fixed;
     }
 
+    /* -------- header: name + coin jar -------- */
     .header {
         display: flex; align-items: center; justify-content: space-between;
-        margin-bottom: 2.5vh; min-height: 11vh;
+        margin-bottom: 2vh; min-height: 12vh; gap: 2vw;
     }
-    #kidName { font-size: 5vh; font-weight: 700; opacity: .9; }
-    #jar {
-        display: flex; align-items: center; gap: 1.2vh;
-        background: #1b2338; border-radius: 3vh; padding: 1.2vh 2.5vh;
-        font-size: 5vh; font-weight: 800;
+    #kidName {
+        font-size: 5.4vh; font-weight: 800; letter-spacing: .2vh;
+        display: flex; align-items: center; gap: 1.5vh;
     }
-    #jarCoins { letter-spacing: -.5vh; font-size: 4.2vh; }
-    #jarCount { color: #ffd24a; }
+    #kidName .wave { display: inline-block; animation: wave 2.2s ease-in-out infinite; transform-origin: 70% 70%; }
+    @keyframes wave { 0%,60%,100% { transform: rotate(0); } 15% { transform: rotate(16deg); } 30% { transform: rotate(-8deg); } 45% { transform: rotate(12deg); } }
 
-    .rowTitle { font-size: 4.5vh; margin: 1.5vh 0 1vh; opacity: .85; }
-    .grid { display: flex; flex-wrap: wrap; gap: 2.2vh; }
+    #jar {
+        display: flex; align-items: center; gap: 1.4vh;
+        background: linear-gradient(150deg, #2a2350, #1c1740);
+        border: .5vh solid rgba(255, 210, 74, .5);
+        border-radius: 4vh; padding: 1.3vh 3vh;
+        box-shadow: 0 1.5vh 4vh rgba(0, 0, 0, .35), inset 0 0 3vh rgba(255, 210, 74, .1);
+    }
+    #jarCoins { font-size: 4.2vh; letter-spacing: -.6vh; filter: drop-shadow(0 .4vh .3vh rgba(0,0,0,.4)); }
+    #jarCount { font-size: 5.2vh; font-weight: 900; color: var(--accent); min-width: 2ch; text-align: center; }
+    #jar.bump { animation: bump .4s ease; }
+    @keyframes bump { 0%{ transform: scale(1);} 40%{ transform: scale(1.14);} 100%{ transform: scale(1);} }
+
+    /* -------- section rows -------- */
+    .section { margin-top: 2.5vh; }
+    .section.hidden { display: none; }
+    .rowTitle {
+        font-size: 4vh; margin: 1vh 0 1.4vh; display: flex; align-items: center; gap: 1.2vh;
+    }
+    .rowTitle .pill {
+        font-size: 2.1vh; font-weight: 800; opacity: .8; background: rgba(255,255,255,.1);
+        padding: .5vh 1.6vh; border-radius: 3vh;
+    }
+    .grid { display: flex; flex-wrap: wrap; gap: 2.4vh; }
 
     .tile {
-        position: relative; background: #1b2338; border-radius: 2.5vh;
-        outline: none; cursor: pointer; border: .6vh solid transparent;
-        transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease;
+        position: relative; outline: none; cursor: pointer;
+        border: .55vh solid transparent; border-radius: 2.6vh;
+        transition: transform .14s ease, border-color .14s ease, box-shadow .14s ease, filter .14s ease;
         display: flex; flex-direction: column; align-items: center; justify-content: center;
     }
     .tile:focus, .tile.focused {
-        border-color: #ffd24a; transform: scale(1.08); z-index: 2;
-        box-shadow: 0 0 4vh rgba(255, 210, 74, .45);
+        border-color: var(--accent); transform: scale(1.1) translateY(-.6vh); z-index: 3;
+        box-shadow: 0 2vh 5vh rgba(0,0,0,.45), 0 0 5vh rgba(255, 210, 74, .55);
     }
-    .tile.disabled { opacity: .45; }
+    .tile.disabled { filter: grayscale(.85) brightness(.7); }
+    .tile.disabled::after {
+        content: "🔒"; position: absolute; top: -1vh; left: -1vh; font-size: 3.4vh;
+        filter: drop-shadow(0 .3vh .3vh rgba(0,0,0,.5));
+    }
 
-    .chore { width: 22vh; height: 22vh; }
-    .chore .icon { font-size: 10vh; line-height: 1.15; }
-    .chore .name { font-size: 2.2vh; opacity: .7; max-width: 90%; text-align: center;
+    /* chores */
+    .chore {
+        width: 21vh; height: 21vh; background: linear-gradient(150deg, var(--card2), var(--card));
+        box-shadow: 0 1.2vh 3vh rgba(0,0,0,.3);
+    }
+    .chore .icon { font-size: 9.5vh; line-height: 1.1; }
+    .chore .name { font-size: 2vh; opacity: .7; max-width: 90%; text-align: center;
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .badge {
-        position: absolute; top: -1.4vh; right: -1.4vh; background: #ffd24a; color: #402d00;
-        border-radius: 2.4vh; font-size: 2.8vh; font-weight: 800; padding: .5vh 1.4vh;
+        position: absolute; top: -1.4vh; right: -1.4vh;
+        background: linear-gradient(150deg, #ffe38a, var(--accent)); color: var(--accent-ink);
+        border-radius: 3vh; font-size: 2.6vh; font-weight: 900; padding: .5vh 1.5vh;
+        box-shadow: 0 .8vh 2vh rgba(0,0,0,.35); display: flex; align-items: center; gap: .3vh;
     }
     .stateBadge {
         position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-        font-size: 9vh; background: rgba(14, 18, 32, .55); border-radius: 2vh;
+        font-size: 8.5vh; background: rgba(13, 16, 48, .55); border-radius: 2.2vh;
     }
 
+    /* titles (library posters) */
     .title { width: 22vh; }
     .title .poster {
-        width: 22vh; height: 31vh; object-fit: cover; border-radius: 2vh 2vh 0 0;
-        background: #2a3350; display: block;
+        width: 22vh; height: 32vh; object-fit: cover; border-radius: 2.4vh;
+        background: linear-gradient(150deg, var(--card2), var(--card));
+        display: block; box-shadow: 0 1.4vh 3.5vh rgba(0,0,0,.4);
     }
-    .title .name { font-size: 2.2vh; opacity: .75; padding: .8vh 1vh 1.2vh; max-width: 100%;
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .title .name {
+        font-size: 2vh; opacity: .8; padding: .9vh .6vh 0; max-width: 100%; text-align: center;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .title .badge { top: -1vh; right: -1vh; }
 
-    /* Modal overlay: confirm / celebrate / error. While open, D-pad focus is trapped inside. */
+    #more { display: flex; align-items: center; justify-content: center;
+        width: 22vh; height: 32vh; font-size: 6vh; opacity: .5; }
+    #more.spin { animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .empty { opacity: .6; font-size: 3vh; padding: 4vh 0; }
+
+    /* -------- overlay: confirm / celebrate -------- */
     #overlay {
-        position: fixed; inset: 0; background: rgba(5, 7, 14, .88); display: none;
-        align-items: center; justify-content: center; z-index: 10;
+        position: fixed; inset: 0; background: rgba(6, 8, 22, .9); display: none;
+        align-items: center; justify-content: center; z-index: 10; backdrop-filter: blur(.6vh);
     }
     #overlay.open { display: flex; }
     #overlayCard {
-        background: #1b2338; border-radius: 4vh; padding: 5vh 6vh; text-align: center;
-        max-width: 84vw;
+        background: linear-gradient(160deg, #2a2f5e, #1a1e44);
+        border: .5vh solid rgba(255,255,255,.08);
+        border-radius: 4.5vh; padding: 5vh 6vh; text-align: center; max-width: 86vw;
+        box-shadow: 0 3vh 8vh rgba(0,0,0,.5); animation: pop .18s ease;
     }
-    #overlayArt { font-size: 16vh; line-height: 1.2; }
-    #overlayArt img { height: 34vh; border-radius: 2vh; }
-    #overlayCost { font-size: 6vh; font-weight: 800; color: #ffd24a; margin-top: 1.5vh; }
-    #overlayButtons { display: flex; gap: 3vh; justify-content: center; margin-top: 4vh; }
+    @keyframes pop { from { transform: scale(.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+    #overlayArt { font-size: 16vh; line-height: 1.15; }
+    #overlayArt img { height: 36vh; border-radius: 2.4vh; box-shadow: 0 2vh 5vh rgba(0,0,0,.5); }
+    #overlayCost { font-size: 5.4vh; font-weight: 900; color: var(--accent); margin-top: 1.8vh; }
+    #overlayButtons { display: flex; gap: 3.5vh; justify-content: center; margin-top: 4vh; }
     .obtn {
-        font-size: 7vh; padding: 1.5vh 5vh; border-radius: 3vh; border: .6vh solid transparent;
-        background: #2a3350; color: #fff; outline: none; cursor: pointer;
-        transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease;
+        font-size: 6.5vh; padding: 1.4vh 5vh; border-radius: 3.5vh; border: .6vh solid transparent;
+        background: linear-gradient(150deg, var(--card2), var(--card)); color: #fff; outline: none; cursor: pointer;
+        transition: transform .14s ease, border-color .14s ease, box-shadow .14s ease;
     }
-    .obtn:focus { border-color: #ffd24a; transform: scale(1.12);
-        box-shadow: 0 0 4vh rgba(255, 210, 74, .45); }
+    .obtn.go { background: linear-gradient(150deg, #6ff0a3, #35c46f); }
+    .obtn:focus { border-color: var(--accent); transform: scale(1.14);
+        box-shadow: 0 0 5vh rgba(255, 210, 74, .55); }
 
-    #status { position: fixed; bottom: 1vh; right: 2vh; font-size: 1.8vh; opacity: .3; }
+    #status { position: fixed; bottom: 1vh; right: 2vh; font-size: 1.7vh; opacity: .25; }
 </style>
 </head>
 <body>
@@ -96,11 +158,15 @@
         <div id="jar"><span id="jarCoins"></span><span id="jarCount"></span></div>
     </div>
 
-    <div class="rowTitle">🧹✨</div>
-    <div id="chores" class="grid"></div>
+    <div id="choreSection" class="section hidden">
+        <div class="rowTitle">🧹✨ <span class="pill">🪙 earn coins</span></div>
+        <div id="chores" class="grid"></div>
+    </div>
 
-    <div class="rowTitle" style="margin-top:3.5vh;">📺🍿</div>
-    <div id="titles" class="grid"></div>
+    <div id="titleSection" class="section">
+        <div class="rowTitle">📺🍿 <span class="pill">🪙 spend to watch</span></div>
+        <div id="titles" class="grid"></div>
+    </div>
 
     <div id="overlay">
         <div id="overlayCard">
@@ -116,8 +182,13 @@
     'use strict';
 
     var token = new URLSearchParams(location.search).get('token') || '';
-    var state = null;
+    var state = null;          // latest coins/chores snapshot
+    var titles = [];           // accumulated library posters
+    var titlesTotal = 0;       // how many the child can access in total
+    var pageSize = 60;
+    var loadingMore = false;
     var overlayTimer = null;
+    var lastCoins = null;
 
     // ------------------------------------------------------------------ audio
     var audioCtx = null;
@@ -152,32 +223,40 @@
         return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
 
     function coinRow(n) {
-        var shown = Math.min(n, 10);
+        var shown = Math.min(n, 8);
         var out = '';
         for (var i = 0; i < shown; i++) { out += '🪙'; }
-        return out;
+        return out || '🫙';
     }
 
-    function render() {
-        if (!state) { return; }
+    function redeemable() { return state ? state.RedeemableNow : 0; }
 
-        // The page refreshes every 20 s; remember which tile the D-pad was on so the
-        // re-render doesn't yank focus back to the first tile mid-navigation.
-        var focusKey = null;
-        var active = document.activeElement;
-        if (active && active.classList && active.classList.contains('tile')) {
-            focusKey = active.getAttribute('data-kind') + ':' + active.getAttribute('data-id');
-        }
-
-        document.getElementById('kidName').textContent = state.Name;
+    function renderJar() {
         document.getElementById('jarCoins').textContent = coinRow(state.CoinBalance);
         document.getElementById('jarCount').textContent = state.CoinBalance;
+        if (lastCoins !== null && lastCoins !== state.CoinBalance) {
+            var jar = document.getElementById('jar');
+            jar.classList.remove('bump'); void jar.offsetWidth; jar.classList.add('bump');
+        }
+        lastCoins = state.CoinBalance;
+    }
 
-        var chores = document.getElementById('chores');
-        chores.innerHTML = state.Chores.map(function (c) {
-            var done = c.MaxPerDay > 0 && c.ClaimedToday >= c.MaxPerDay && c.Pending === 0;
+    function renderChores() {
+        var section = document.getElementById('choreSection');
+        var chores = state.Chores || [];
+        section.classList.toggle('hidden', chores.length === 0);
+
+        // Preserve D-pad focus if it was on a chore we're about to rebuild.
+        var focusId = null;
+        var active = document.activeElement;
+        if (active && active.getAttribute && active.getAttribute('data-kind') === 'chore') {
+            focusId = active.getAttribute('data-id');
+        }
+
+        document.getElementById('chores').innerHTML = chores.map(function (c) {
             var pending = c.Pending > 0;
-            var blocked = done || pending || (c.MaxPerDay > 0 && c.ClaimedToday >= c.MaxPerDay);
+            var done = c.MaxPerDay > 0 && c.ClaimedToday >= c.MaxPerDay && !pending;
+            var blocked = pending || done || (c.MaxPerDay > 0 && c.ClaimedToday >= c.MaxPerDay);
             return '<div class="tile chore' + (blocked ? ' disabled' : '') + '" tabindex="0"' +
                 ' data-kind="chore" data-id="' + esc(c.Id) + '" data-blocked="' + (blocked ? '1' : '0') + '">' +
                 '<div class="icon">' + esc(c.Icon || '⭐') + '</div>' +
@@ -187,34 +266,94 @@
                 '</div>';
         }).join('');
 
-        var titles = document.getElementById('titles');
-        titles.innerHTML = state.Titles.map(function (t) {
-            var blocked = !t.Affordable;
-            return '<div class="tile title' + (blocked ? ' disabled' : '') + '" tabindex="0"' +
-                ' data-kind="title" data-id="' + esc(t.ItemId) + '" data-blocked="' + (blocked ? '1' : '0') + '">' +
-                '<img class="poster" src="kid/image/' + esc(t.ItemId) + '?token=' + encodeURIComponent(token) + '" alt="" />' +
-                '<div class="name">' + esc(t.Name) + '</div>' +
-                '<div class="badge">🪙' + t.CoinCost + '</div>' +
-                '</div>';
-        }).join('');
-
-        if (!document.getElementById('overlay').classList.contains('open')) {
-            if (focusKey) {
-                var again = document.querySelector(
-                    '.tile[data-kind="' + focusKey.split(':')[0] + '"][data-id="' + focusKey.split(':')[1] + '"]');
-                if (again) { again.focus(); return; }
-            }
-            focusFirst();
+        if (focusId) {
+            var again = document.querySelector('.chore[data-id="' + focusId + '"]');
+            if (again) { again.focus(); }
         }
     }
 
-    function load() {
+    function titleTile(t, index) {
+        var blocked = t.CoinCost > redeemable();
+        return '<div class="tile title' + (blocked ? ' disabled' : '') + '" tabindex="0"' +
+            ' data-kind="title" data-id="' + esc(t.ItemId) + '" data-index="' + index + '"' +
+            ' data-cost="' + t.CoinCost + '" data-blocked="' + (blocked ? '1' : '0') + '">' +
+            '<img class="poster" loading="lazy" src="kid/image/' + esc(t.ItemId) +
+                '?token=' + encodeURIComponent(token) + '" alt="" ' +
+                'onerror="this.style.visibility=\'hidden\'" />' +
+            '<div class="name">' + esc(t.Name) + '</div>' +
+            '<div class="badge">🪙' + t.CoinCost + '</div>' +
+            '</div>';
+    }
+
+    function renderTitlesFresh() {
+        var grid = document.getElementById('titles');
+        if (!titles.length) {
+            grid.innerHTML = '<div class="empty">🍿 …</div>';
+            return;
+        }
+        grid.innerHTML = titles.map(titleTile).join('') + moreTile();
+    }
+
+    function moreTile() {
+        return titles.length < titlesTotal
+            ? '<div id="more">⏬</div>'
+            : '';
+    }
+
+    // Refresh affordability on already-rendered posters without rebuilding the grid,
+    // so a 20 s poll never yanks the child's D-pad focus mid-scroll.
+    function remarkTitles() {
+        var r = redeemable();
+        document.querySelectorAll('.title').forEach(function (el) {
+            var blocked = parseInt(el.getAttribute('data-cost'), 10) > r;
+            el.classList.toggle('disabled', blocked);
+            el.setAttribute('data-blocked', blocked ? '1' : '0');
+        });
+    }
+
+    // --------------------------------------------------------------- loading
+    function loadState(initial) {
         api('state').then(function (s) {
             state = s;
-            render();
+            document.getElementById('kidName').innerHTML =
+                '<span class="wave">👋</span>' + esc(s.Name);
+            renderJar();
+            renderChores();
+            if (initial) {
+                titles = s.Titles || [];
+                titlesTotal = s.TitlesTotal || titles.length;
+                pageSize = s.PageSize || 60;
+                renderTitlesFresh();
+                focusFirst();
+            } else {
+                remarkTitles();
+            }
             document.getElementById('status').textContent = new Date().toLocaleTimeString();
         }).catch(function () {
             document.getElementById('status').textContent = '⚠';
+        });
+    }
+
+    function loadMore() {
+        if (loadingMore || titles.length >= titlesTotal) { return; }
+        loadingMore = true;
+        var more = document.getElementById('more');
+        if (more) { more.classList.add('spin'); }
+        api('library?skip=' + titles.length + '&take=' + pageSize).then(function (r) {
+            var start = titles.length;
+            titles = titles.concat(r.Items || []);
+            titlesTotal = r.Total || titles.length;
+            // Append only the new tiles (don't rebuild — keeps focus + loaded images).
+            var grid = document.getElementById('titles');
+            var oldMore = document.getElementById('more');
+            if (oldMore) { oldMore.remove(); }
+            var html = (r.Items || []).map(function (t, i) { return titleTile(t, start + i); }).join('');
+            grid.insertAdjacentHTML('beforeend', html + moreTile());
+            loadingMore = false;
+        }).catch(function () {
+            loadingMore = false;
+            var m = document.getElementById('more');
+            if (m) { m.classList.remove('spin'); }
         });
     }
 
@@ -227,7 +366,7 @@
         bar.innerHTML = '';
         (buttons || []).forEach(function (b) {
             var el = document.createElement('button');
-            el.className = 'obtn';
+            el.className = 'obtn' + (b.go ? ' go' : '');
             el.textContent = b.label;
             el.onclick = function () { sndSelect(); b.action(); };
             bar.appendChild(el);
@@ -243,36 +382,45 @@
         focusFirst();
     }
 
-    function flashOverlay(artHtml, costHtml, ms) {
+    function flashOverlay(artHtml, costHtml, ms, reload) {
         openOverlay(artHtml, costHtml, []);
-        overlayTimer = setTimeout(function () { closeOverlay(); load(); }, ms || 2500);
+        overlayTimer = setTimeout(function () {
+            closeOverlay();
+            if (reload) { loadState(false); }
+        }, ms || 2500);
     }
 
     // --------------------------------------------------------------- actions
     function onActivate(tile) {
-        if (tile.getAttribute('data-blocked') === '1') { sndNo(); return; }
         var kind = tile.getAttribute('data-kind');
         var id = tile.getAttribute('data-id');
+
+        if (tile.getAttribute('data-blocked') === '1') {
+            sndNo();
+            // For a locked poster, tell her *why* in pictures: needs more coins.
+            if (kind === 'title') { flashOverlay('🪙🔒', 'need more 🪙', 1400); }
+            return;
+        }
         sndSelect();
 
         if (kind === 'chore') {
-            var chore = state.Chores.filter(function (c) { return c.Id === id; })[0];
+            var chore = (state.Chores || []).filter(function (c) { return c.Id === id; })[0];
             if (!chore) { return; }
             openOverlay(
                 '<span style="font-size:16vh;">' + esc(chore.Icon || '⭐') + '</span>',
                 '🪙 × ' + chore.Coins + ' ?',
                 [
-                    { label: '👍', action: function () { claim(id); } },
+                    { label: '👍', go: true, action: function () { claim(id); } },
                     { label: '👎', action: closeOverlay },
                 ]);
         } else if (kind === 'title') {
-            var title = state.Titles.filter(function (t) { return t.ItemId === id; })[0];
+            var title = titles.filter(function (t) { return t.ItemId === id; })[0];
             if (!title) { return; }
             openOverlay(
                 '<img src="kid/image/' + esc(id) + '?token=' + encodeURIComponent(token) + '" alt="" />',
                 '🪙 × ' + title.CoinCost + ' → ▶️ ?',
                 [
-                    { label: '▶️', action: function () { redeem(id); } },
+                    { label: '▶️', go: true, action: function () { redeem(id); } },
                     { label: '↩️', action: closeOverlay },
                 ]);
         }
@@ -282,10 +430,10 @@
         api('claim?choreId=' + encodeURIComponent(choreId), 'POST').then(function (r) {
             if (r.Ok) {
                 sndYay();
-                flashOverlay('📨 ⏳', '', 2200); // sent to the parent, wait for the thumbs-up
+                flashOverlay('📨 ⏳', 'ask mum/dad', 2200, true);
             } else {
                 sndNo();
-                flashOverlay('🚫', '', 1800);
+                flashOverlay('🚫', '', 1800, true);
             }
         }).catch(function () { sndNo(); flashOverlay('⚠️', '', 1800); });
     }
@@ -295,11 +443,11 @@
             if (r.Error) {
                 sndNo();
                 // balance => not enough coins; dailycap => enough saved but today's spend limit hit.
-                flashOverlay(r.Error === 'dailycap' ? '🕐🚫' : '🪙🚫', '', 2200);
+                flashOverlay(r.Error === 'dailycap' ? '🕐🚫' : '🪙🔒', '', 2200, true);
             } else {
                 sndYay();
                 // Played on her Jellyfin session, or a nudge to open the Jellyfin app.
-                flashOverlay(r.Played ? '🎉 ▶️' : '🎉 📺 👆', '', r.Played ? 2500 : 4000);
+                flashOverlay(r.Played ? '🎉 ▶️' : '🎉 📺 👆', '', r.Played ? 2600 : 4200, true);
             }
         }).catch(function () { sndNo(); flashOverlay('⚠️', '', 1800); });
     }
@@ -317,6 +465,14 @@
             els.indexOf(document.activeElement) < 0)) {
             els[0].focus();
         }
+    }
+
+    // When the D-pad approaches the end of the loaded posters, fetch the next page so
+    // the grid feels endless (it's her whole library).
+    function maybeLoadMore(el) {
+        if (!el || el.getAttribute('data-kind') !== 'title') { return; }
+        var idx = parseInt(el.getAttribute('data-index'), 10) || 0;
+        if (idx >= titles.length - 12) { loadMore(); }
     }
 
     function move(dir) {
@@ -340,7 +496,14 @@
             var score = primary + secondary * 2.5;
             if (score < bestScore) { bestScore = score; best = el; }
         });
-        if (best) { best.focus(); sndMove(); }
+        if (best) {
+            best.focus();
+            best.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            sndMove();
+            maybeLoadMore(best);
+        } else if ((dir === 'down' || dir === 'right')) {
+            loadMore(); // at the very end — pull more in
+        }
     }
 
     document.addEventListener('keydown', function (e) {
@@ -366,11 +529,12 @@
 
     document.addEventListener('click', function (e) {
         var tile = e.target.closest ? e.target.closest('.tile') : null;
-        if (tile) { onActivate(tile); }
+        if (tile) { onActivate(tile); return; }
+        if (e.target.closest && e.target.closest('#more')) { loadMore(); }
     });
 
-    load();
-    setInterval(load, 20000);
+    loadState(true);
+    setInterval(function () { loadState(false); }, 20000);
 })();
 </script>
 </body>

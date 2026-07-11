@@ -350,7 +350,13 @@ public sealed class RewardsService
             }
 
             var refundSeconds = Math.Min(finished.RedeemedSeconds, unusedBonus);
-            var refundCoins = (int)(refundSeconds / CoinSeconds(config));
+
+            // Round the refund UP to whole coins: any unwatched fraction of a coin's worth
+            // of time comes back as a full coin (a coin part-spent but barely watched is
+            // returned in full — deliberately generous to the kid). refundSeconds can never
+            // exceed RedeemedSeconds, which is always a whole number of coins, so ceiling
+            // still can't hand back more coins than were actually redeemed.
+            var refundCoins = (int)Math.Ceiling(refundSeconds / (double)CoinSeconds(config));
             if (refundCoins <= 0)
             {
                 return;
@@ -385,11 +391,19 @@ public sealed class RewardsService
         }
 
         var item = _libraryManager.GetItemById(guid);
-        if (item is null)
-        {
-            return null;
-        }
+        return item is null ? null : BuildTitle(config, item);
+    }
 
+    /// <summary>
+    /// Builds a kid-page poster entry (name + coin cost) for an already-resolved library
+    /// item. For a series the cost is the median episode runtime. Returns null when the
+    /// item has no usable runtime (so it can't be priced/played).
+    /// </summary>
+    /// <param name="config">Plugin config.</param>
+    /// <param name="item">The library item.</param>
+    /// <returns>The priced title, or null.</returns>
+    public ReferenceTitle? BuildTitle(PluginConfiguration config, BaseItem item)
+    {
         long? runtimeTicks = item.RunTimeTicks;
         if (item is Series series)
         {

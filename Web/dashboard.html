@@ -7,15 +7,60 @@
 <body>
 <div id="kidsLimitDashboardPage" data-role="page" class="page type-interior pluginConfigurationPage"
      data-require="emby-input,emby-button">
+    <style>
+        /* Scoped to this page so we don't touch the rest of the admin dashboard. */
+        #kidsLimitDashboardPage .klHead { display:flex; align-items:center; flex-wrap:wrap; gap:.6em; }
+        #kidsLimitDashboardPage .klHead h2 { margin:0; }
+        #kidsLimitDashboardPage #cards {
+            display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:1em; margin-top:1em;
+        }
+        #kidsLimitDashboardPage .klCard {
+            border:1px solid rgba(127,127,127,.28); border-radius:12px; padding:1em 1.1em;
+            background:rgba(127,127,127,.06); display:flex; flex-direction:column; gap:.55em;
+        }
+        #kidsLimitDashboardPage .klCardTop { display:flex; justify-content:space-between; align-items:baseline; gap:.5em; }
+        #kidsLimitDashboardPage .klName { margin:0; font-size:1.35em; }
+        #kidsLimitDashboardPage .klMeta { opacity:.65; font-size:.85em; text-align:right; }
+        #kidsLimitDashboardPage .klFlag {
+            display:inline-block; font-weight:700; font-size:.85em; padding:.15em .7em; border-radius:20px;
+            background:rgba(204,0,0,.15); color:#ff6b6b;
+        }
+        #kidsLimitDashboardPage .klRemain {
+            display:flex; align-items:baseline; gap:.5em; font-size:1.05em;
+        }
+        #kidsLimitDashboardPage .klChip {
+            font-size:1.4em; font-weight:800; padding:.05em .55em; border-radius:10px; color:#fff;
+        }
+        #kidsLimitDashboardPage .klSub { opacity:.7; font-size:.85em; }
+        #kidsLimitDashboardPage .klBarRow { display:flex; align-items:center; gap:.6em; font-size:.88em; }
+        #kidsLimitDashboardPage .klBarRow .lbl { width:5.5em; opacity:.75; flex:0 0 auto; }
+        #kidsLimitDashboardPage .klBarRow .val { margin-left:auto; opacity:.85; white-space:nowrap; }
+        #kidsLimitDashboardPage .klBar {
+            flex:1 1 auto; height:9px; border-radius:6px; background:rgba(127,127,127,.22); overflow:hidden; min-width:60px;
+        }
+        #kidsLimitDashboardPage .klBar > span { display:block; height:100%; border-radius:6px; }
+        #kidsLimitDashboardPage .klSection {
+            border-top:1px dashed rgba(127,127,127,.3); padding-top:.55em; margin-top:.15em;
+        }
+        #kidsLimitDashboardPage .klCoins { display:flex; align-items:center; gap:.4em; font-size:1.05em; }
+        #kidsLimitDashboardPage .klCoins strong { font-size:1.25em; }
+        #kidsLimitDashboardPage .klClaim {
+            display:flex; align-items:center; gap:.4em; margin:.3em 0; padding:.3em .5em;
+            background:rgba(255,210,74,.12); border-radius:8px;
+        }
+        #kidsLimitDashboardPage .klBtns { display:flex; flex-wrap:wrap; gap:.35em; align-items:center; }
+        #kidsLimitDashboardPage .klBtns .sep { flex:1 1 100%; height:0; }
+        #kidsLimitDashboardPage .klKidLink { font-size:.85em; opacity:.8; }
+        #kidsLimitDashboardPage .klHint { opacity:.6; font-size:.8em; }
+    </style>
     <div data-role="content">
         <div class="content-primary">
             <div class="verticalSection">
-                <h2 class="sectionTitle">Kids Watch-Time Dashboard
-                    <button is="emby-button" type="button" id="btnRefresh" class="raised"
-                            style="margin-left:1em;"><span>Refresh</span></button>
-                    <a is="emby-linkbutton" class="raised" href="configurationpage?name=KidsLimitConfig"
-                       style="margin-left:.5em;"><span>Settings</span></a>
-                </h2>
+                <div class="klHead">
+                    <h2 class="sectionTitle">Kids Watch-Time</h2>
+                    <button is="emby-button" type="button" id="btnRefresh" class="raised"><span>↻ Refresh</span></button>
+                    <a is="emby-linkbutton" class="raised" href="configurationpage?name=KidsLimitConfig"><span>⚙ Settings</span></a>
+                </div>
                 <p id="dashStatus" class="fieldDescription"></p>
             </div>
             <div id="cards"></div>
@@ -28,10 +73,12 @@
         var page;
         var token = '';
         var refreshTimer;
-        var chores = []; // from plugin config; drives the one-tap earn buttons
+        var chores = [];    // from plugin config; drives the one-tap earn buttons
+        var usersCfg = [];  // per-user config; used to build each kid's page link
 
         function esc(s) { return (s || '').toString().replace(/[&<>"]/g, function (c) {
             return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+        function norm(s) { return (s || '').toString().replace(/-/g, '').toLowerCase(); }
 
         function fmt(sec) {
             sec = Math.max(0, Math.round(sec || 0));
@@ -47,54 +94,75 @@
             return ApiClient.ajax({ type: method || 'GET', url: url, dataType: 'json' });
         }
 
-        function windowRow(label, used, cap) {
-            var over = (cap !== null && cap !== undefined && used > cap * 60);
-            return '<div style="display:flex;justify-content:space-between;">' +
-                '<span>' + label + '</span>' +
-                '<span style="' + (over ? 'color:#c00;font-weight:bold;' : '') + '">' +
-                fmt(used) + ' / ' + capText(cap) + '</span></div>';
+        function barColor(pct) {
+            return pct >= 1 ? '#c0392b' : pct >= 0.8 ? '#e67e22' : '#27ae60';
+        }
+
+        function bar(used, cap) {
+            if (cap === null || cap === undefined) {
+                return '<div class="klBar"><span style="width:100%;background:rgba(39,174,96,.5);"></span></div>';
+            }
+            var pct = cap > 0 ? Math.min(1, used / (cap * 60)) : 1;
+            return '<div class="klBar"><span style="width:' + (pct * 100).toFixed(0) + '%;' +
+                'background:' + barColor(pct) + ';"></span></div>';
+        }
+
+        function barRow(label, used, cap) {
+            return '<div class="klBarRow"><span class="lbl">' + label + '</span>' +
+                bar(used, cap) +
+                '<span class="val">' + fmt(used) + ' / ' + capText(cap) + '</span></div>';
+        }
+
+        function kidLinkFor(userId) {
+            var u = usersCfg.filter(function (x) { return norm(x.UserId) === norm(userId); })[0];
+            if (!u || !u.KidToken) { return ''; }
+            // getUrl keeps any reverse-proxy base path intact (unlike window.location.origin).
+            var href = ApiClient.getUrl('KidsLimit/kid', { token: u.KidToken });
+            return '<a class="klKidLink" href="' + esc(href) + '" target="_blank" rel="noopener">🧒 Open kid page ↗</a>';
         }
 
         function renderCard(s) {
             var remaining = s.HasLimit ? fmt(s.EffectiveRemainingSeconds) : '∞';
-            var remColor = (s.HasLimit && s.EffectiveRemainingSeconds <= 0) ? '#c00'
-                : (s.HasLimit && s.EffectiveRemainingSeconds <= 600) ? '#e67e00' : '#2a2';
+            var remColor = !s.HasLimit ? '#27ae60'
+                : (s.EffectiveRemainingSeconds <= 0) ? '#c0392b'
+                : (s.EffectiveRemainingSeconds <= 600) ? '#e67e22' : '#27ae60';
 
-            var html = '<div class="paperList" style="padding:1em;margin-bottom:1em;" data-userid="' + esc(s.UserId) + '">' +
-                '<div style="display:flex;justify-content:space-between;align-items:center;">' +
-                '<h3 style="margin:0;">' + esc(s.UserName) + '</h3>' +
-                '<span class="fieldDescription">' + esc(s.PresetName) + ' · ' + esc(s.CurrentWindow) + '</span></div>' +
-                (s.ManuallyStopped
-                    ? '<div style="color:#c00;font-weight:bold;">■ Stopped by parent</div>'
-                    : (s.Blocked ? '<div style="color:#c00;font-weight:bold;">■ Currently blocked (over limit)</div>' : '')) +
-                '<div style="font-size:1.4em;margin:.3em 0;color:' + remColor + ';">' +
-                'Remaining: <strong>' + remaining + '</strong>' +
-                (s.HasLimit && s.BindingCap ? ' <span class="fieldDescription">(' + esc(s.BindingCap) + ' cap)</span>' : '') +
+            var flag = s.ManuallyStopped ? '<span class="klFlag">■ Stopped by parent</span>'
+                : (s.Blocked ? '<span class="klFlag">■ Over limit</span>' : '');
+
+            var html = '<div class="klCard" data-userid="' + esc(s.UserId) + '">' +
+                '<div class="klCardTop">' +
+                    '<h3 class="klName">' + esc(s.UserName) + '</h3>' +
+                    '<span class="klMeta">' + esc(s.PresetName) + '<br>' + esc(s.CurrentWindow) + '</span>' +
                 '</div>' +
-                '<div>Watched today: <strong>' + fmt(s.SecondsWatchedTotal) + '</strong> / ' + capText(s.DailyCapMinutes) +
-                (s.BonusSeconds > 0 ? ' <span style="color:#2a2;">(+' + fmt(s.BonusSeconds) + ' bonus)</span>' : '') + '</div>' +
-                '<div>Current session: ' + fmt(s.CurrentSessionSeconds) + ' / ' + capText(s.SessionCapMinutes) + '</div>' +
-                '<div style="margin:.5em 0;">' +
-                windowRow('Morning', s.SecondsMorning, s.MorningCapMinutes) +
-                windowRow('Afternoon', s.SecondsAfternoon, s.AfternoonCapMinutes) +
-                windowRow('Evening', s.SecondsEvening, s.EveningCapMinutes) +
+                (flag ? '<div>' + flag + '</div>' : '') +
+                '<div class="klRemain"><span class="klSub">Time left</span>' +
+                    '<span class="klChip" style="background:' + remColor + ';">' + remaining + '</span>' +
+                    (s.HasLimit && s.BindingCap ? '<span class="klSub">(' + esc(s.BindingCap) + ' cap)</span>' : '') +
                 '</div>' +
-                '<div id="hist-' + esc(s.UserId) + '" class="fieldDescription">History…</div>' +
-                '<div id="wallet-' + esc(s.UserId) + '" style="margin:.5em 0;padding:.5em .75em;' +
-                'border:1px solid rgba(127,127,127,.35);border-radius:6px;">Coins…</div>' +
-                '<div style="margin-top:.5em;">' +
-                bonusBtn(s.UserId, 10) + bonusBtn(s.UserId, 30) + bonusBtn(s.UserId, 60) +
-                '<button is="emby-button" type="button" class="raised btnCustom" data-userid="' + esc(s.UserId) + '"><span>+ custom</span></button>' +
-                (s.ManuallyStopped
-                    ? '<button is="emby-button" type="button" class="raised button-submit btnAllow" data-userid="' + esc(s.UserId) + '"><span>Allow again</span></button>'
-                    : '<button is="emby-button" type="button" class="raised button-cancel btnStop" data-userid="' + esc(s.UserId) + '"><span>Stop now</span></button>') +
-                '</div></div>';
+                barRow('Today', s.SecondsWatchedTotal, s.DailyCapMinutes) +
+                (s.BonusSeconds > 0 ? '<div class="klSub" style="color:#27ae60;">+' + fmt(s.BonusSeconds) + ' bonus added today</div>' : '') +
+                barRow('Session', s.CurrentSessionSeconds, s.SessionCapMinutes) +
+                barRow('Morning', s.SecondsMorning, s.MorningCapMinutes) +
+                barRow('Afternoon', s.SecondsAfternoon, s.AfternoonCapMinutes) +
+                barRow('Evening', s.SecondsEvening, s.EveningCapMinutes) +
+                '<div id="hist-' + esc(s.UserId) + '" class="klSub">History…</div>' +
+                '<div class="klSection" id="wallet-' + esc(s.UserId) + '">Coins…</div>' +
+                '<div class="klSection klBtns">' +
+                    bonusBtn(s.UserId, 10) + bonusBtn(s.UserId, 30) + bonusBtn(s.UserId, 60) +
+                    '<button is="emby-button" type="button" class="raised btnCustom" data-userid="' + esc(s.UserId) + '"><span>+ custom</span></button>' +
+                    (s.ManuallyStopped
+                        ? '<button is="emby-button" type="button" class="raised button-submit btnAllow" data-userid="' + esc(s.UserId) + '"><span>▶ Allow again</span></button>'
+                        : '<button is="emby-button" type="button" class="raised button-cancel btnStop" data-userid="' + esc(s.UserId) + '"><span>■ Stop now</span></button>') +
+                '</div>' +
+                (kidLinkFor(s.UserId) ? '<div>' + kidLinkFor(s.UserId) + '</div>' : '') +
+                '</div>';
             return html;
         }
 
         function bonusBtn(userId, mins) {
             return '<button is="emby-button" type="button" class="raised btnBonus" data-userid="' + esc(userId) +
-                '" data-mins="' + mins + '"><span>+' + mins + '</span></button>';
+                '" data-mins="' + mins + '"><span>+' + mins + 'm</span></button>';
         }
 
         function wire() {
@@ -133,29 +201,29 @@
             var el = page.querySelector('#wallet-' + userId);
             if (!el) { return; }
 
-            var html = '<div style="display:flex;justify-content:space-between;align-items:center;">' +
-                '<span>🪙 <strong>' + w.CoinBalance + '</strong> coin(s) = ' + fmt(w.CoinBalance * w.CoinMinutes * 60) +
-                (w.CoinsRedeemedToday ? ' <span class="fieldDescription">(redeemed today: ' + w.CoinsRedeemedToday + ')</span>' : '') +
-                '</span></div>';
+            var html = '<div class="klCoins">🪙 <strong>' + w.CoinBalance + '</strong>' +
+                '<span class="klSub">= ' + fmt(w.CoinBalance * w.CoinMinutes * 60) +
+                (w.CoinsRedeemedToday ? ' · spent today: ' + w.CoinsRedeemedToday : '') + '</span></div>';
 
             (w.PendingClaims || []).forEach(function (c) {
-                html += '<div style="display:flex;align-items:center;gap:.5em;margin:.25em 0;">' +
+                html += '<div class="klClaim">' +
                     '<span style="flex:1 1 auto;">⏳ ' + esc(c.ChoreName) + ' <strong>🪙' + c.Coins + '</strong>' +
-                    ' <span class="fieldDescription">' + new Date(c.ClaimedAtUtc).toLocaleTimeString() + '</span></span>' +
+                    ' <span class="klSub">' + new Date(c.ClaimedAtUtc).toLocaleTimeString() + '</span></span>' +
                     '<button is="emby-button" type="button" class="raised button-submit btnClaim" data-userid="' + esc(userId) +
                     '" data-claim="' + esc(c.Id) + '" data-op="approve" style="min-width:3em;"><span>✓</span></button>' +
                     '<button is="emby-button" type="button" class="raised button-cancel btnClaim" data-userid="' + esc(userId) +
                     '" data-claim="' + esc(c.Id) + '" data-op="reject" style="min-width:3em;"><span>✗</span></button></div>';
             });
 
-            html += '<div style="margin-top:.4em;">';
+            html += '<div class="klBtns" style="margin-top:.4em;">';
             chores.forEach(function (c) {
                 if (c.Enabled === false) { return; }
                 html += '<button is="emby-button" type="button" class="raised btnEarn" data-userid="' + esc(userId) +
                     '" data-chore="' + esc(c.Id) + '" title="' + esc(c.Name) + '">' +
                     '<span>+' + esc(c.Icon || '⭐') + '🪙' + c.Coins + '</span></button>';
             });
-            html += '<button is="emby-button" type="button" class="raised btnRedeemCoins" data-userid="' + esc(userId) +
+            html += '<span class="sep"></span>' +
+                '<button is="emby-button" type="button" class="raised btnRedeemCoins" data-userid="' + esc(userId) +
                 '"><span>Spend coins…</span></button>' +
                 '<button is="emby-button" type="button" class="raised btnAdjustCoins" data-userid="' + esc(userId) +
                 '"><span>± adjust</span></button></div>';
@@ -234,7 +302,7 @@
             if (!token) { return; }
             api('status').then(function (list) {
                 page.querySelector('#dashStatus').textContent =
-                    (list.length ? list.length + ' user(s) tracked.' : 'No enabled users. Enable kids in plugin settings.') +
+                    (list.length ? list.length + ' kid(s) tracked.' : 'No enabled users. Enable kids in plugin settings.') +
                     ' Updated ' + new Date().toLocaleTimeString() + '.';
                 page.querySelector('#cards').innerHTML = list.map(renderCard).join('');
                 wire();
@@ -250,6 +318,7 @@
             ApiClient.getPluginConfiguration(pluginId).then(function (cfg) {
                 token = cfg.BonusApiToken || '';
                 chores = cfg.Chores || [];
+                usersCfg = cfg.Users || [];
                 Dashboard.hideLoadingMsg();
                 if (!token) {
                     page.querySelector('#dashStatus').innerHTML =
