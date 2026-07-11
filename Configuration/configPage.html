@@ -51,6 +51,7 @@
                     <button is="emby-button" type="button" class="raised kidsLimitTab" data-tab="general"><span>General</span></button>
                     <button is="emby-button" type="button" class="raised kidsLimitTab" data-tab="presets"><span>Presets</span></button>
                     <button is="emby-button" type="button" class="raised kidsLimitTab" data-tab="users"><span>Per-user limits</span></button>
+                    <button is="emby-button" type="button" class="raised kidsLimitTab" data-tab="rewards"><span>Rewards</span></button>
                 </div>
 
                 <div class="kidsLimitTabPage" data-tab="general">
@@ -163,6 +164,66 @@
                 </div>
                 </div><!-- /tab users -->
 
+                <div class="kidsLimitTabPage" data-tab="rewards">
+                <div class="verticalSection">
+                    <h3 class="sectionTitle">Coins</h3>
+                    <div class="fieldDescription">
+                        Kids earn <strong>coins</strong> for chores and spend them as extra watch time —
+                        the balance never resets at midnight. See REWARDS.md for the full design. The kid
+                        page is a TV-friendly, picture-only page each kid opens with their own token
+                        (set on the <em>Per-user limits</em> tab).
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="coinMinutes">Minutes per coin</label>
+                        <input is="emby-input" type="number" min="1" id="coinMinutes" />
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="bankCapCoins">Bank cap (coins, 0 = unlimited)</label>
+                        <input is="emby-input" type="number" min="0" id="bankCapCoins" />
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="maxRedeemCoinsPerDay">Max coins redeemable per day (0 = unlimited)</label>
+                        <input is="emby-input" type="number" min="0" id="maxRedeemCoinsPerDay" />
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="ntfyTopicUrl">ntfy topic URL for claim notifications (optional)</label>
+                        <input is="emby-input" type="url" id="ntfyTopicUrl" placeholder="https://ntfy.sh/my-secret-topic" />
+                    </div>
+                    <div class="fieldDescription">
+                        When set, every chore claim POSTs a push notification to this ntfy topic so your
+                        phone pings while the kid waits for approval on the dashboard.
+                    </div>
+                </div>
+
+                <div class="verticalSection">
+                    <h3 class="sectionTitle">Chores</h3>
+                    <div class="fieldDescription">
+                        What the kid can earn coins for. The icon (an emoji) is the whole tile on the kid
+                        page — pick something the kid recognises. Max/day limits how often a chore pays.
+                    </div>
+                    <div id="choresContainer"></div>
+                    <button is="emby-button" type="button" id="btnAddChore" class="raised">
+                        <span>Add chore</span>
+                    </button>
+                </div>
+
+                <div class="verticalSection">
+                    <h3 class="sectionTitle">Reference titles (kid page "watch" tiles)</h3>
+                    <div class="fieldDescription">
+                        The kid spends coins by picking one of these posters; the coin cost comes from the
+                        item's runtime (median episode runtime for a series). Save the API token on the
+                        General tab first — search uses it.
+                    </div>
+                    <div id="refTitlesContainer"></div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="refSearch">Search library (movies &amp; series)</label>
+                        <input is="emby-input" type="text" id="refSearch" />
+                    </div>
+                    <button is="emby-button" type="button" id="btnRefSearch" class="raised"><span>Search</span></button>
+                    <div id="refResults" style="margin-top:.5em;"></div>
+                </div>
+                </div><!-- /tab rewards -->
+
                 <div>
                     <button is="emby-button" type="submit" class="raised button-submit block">
                         <span>Save</span>
@@ -179,6 +240,9 @@
         var allUsers = [];
         var presets = [];
         var userConfigs = [];
+        var chores = [];
+        var refItemIds = [];
+        var refResolved = {}; // itemId -> {Name, Type, RuntimeMinutes, CoinCost}
 
         // Mirrors PluginConfiguration.DefaultPresets() on the server — used only by the
         // "Restore built-in presets" button to re-add missing built-ins client-side.
@@ -331,6 +395,12 @@
                     '<div style="margin:.5em 0;"><strong>Weekly schedule</strong><br/>' + weekdayHtml + '</div>' +
                     '<div><strong>Date overrides</strong><div class="overridesContainer">' + overridesHtml + '</div>' +
                     '<button is="emby-button" type="button" class="raised block btnAddOverride"><span>Add date override</span></button></div>' +
+                    '<div style="margin-top:.8em;"><strong>Kid page (rewards)</strong>' +
+                    '<div class="inputContainer"><label class="inputLabel inputLabelUnfocused">Kid token (empty = kid page off)</label>' +
+                    '<input is="emby-input" type="text" class="kidToken" value="' + esc(cfg.KidToken || '') + '" /></div>' +
+                    '<button is="emby-button" type="button" class="raised btnGenKidToken"><span>Generate token</span></button> ' +
+                    '<button is="emby-button" type="button" class="raised btnCopyKidUrl"><span>Copy kid page URL</span></button>' +
+                    '<div class="fieldDescription kidUrlOut" style="word-break:break-all;"></div></div>' +
                     '</div></div>';
             });
             var container = page.querySelector('#usersContainer');
@@ -346,6 +416,29 @@
                 });
             });
             container.querySelectorAll('.overridesContainer').forEach(wireOverrideRemovals);
+
+            container.querySelectorAll('.btnGenKidToken').forEach(function (btn) {
+                btn.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    var arr = new Uint8Array(16);
+                    (window.crypto || window.msCrypto).getRandomValues(arr);
+                    var tok = Array.prototype.map.call(arr, function (b) {
+                        return ('0' + b.toString(16)).slice(-2); }).join('');
+                    this.closest('.kl-cardBody').querySelector('.kidToken').value = tok;
+                });
+            });
+            container.querySelectorAll('.btnCopyKidUrl').forEach(function (btn) {
+                btn.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    var body = this.closest('.kl-cardBody');
+                    var tok = body.querySelector('.kidToken').value.trim();
+                    var out = body.querySelector('.kidUrlOut');
+                    if (!tok) { out.textContent = 'Set a token first.'; return; }
+                    var url = ApiClient.getUrl('KidsLimit/kid') + '?token=' + encodeURIComponent(tok);
+                    out.textContent = url;
+                    if (navigator.clipboard) { navigator.clipboard.writeText(url).catch(function () {}); }
+                });
+            });
         }
 
         function overrideRow(date, presetId) {
@@ -358,6 +451,121 @@
         function wireOverrideRemovals(container) {
             container.querySelectorAll('.btnRemoveOverride').forEach(function (btn) {
                 btn.onclick = function (e) { e.stopPropagation(); this.closest('.overrideRow').remove(); };
+            });
+        }
+
+        // ---------------------------------------------------------- rewards tab
+
+        function parentApi(path) {
+            var tokenField = page.querySelector('#bonusApiToken');
+            var url = ApiClient.getUrl('KidsLimit/' + path);
+            url += (url.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(tokenField.value.trim());
+            return ApiClient.ajax({ type: 'GET', url: url, dataType: 'json' });
+        }
+
+        function renderChores() {
+            var html = '';
+            chores.forEach(function (c, i) {
+                html += '<div class="paperList choreRow" data-idx="' + i + '" style="padding:.6em 1em;margin-bottom:.4em;' +
+                    'display:flex;flex-wrap:wrap;gap:8px;align-items:center;">' +
+                    '<input is="emby-input" type="text" class="choreIcon" value="' + esc(c.Icon) + '" placeholder="🛏️" ' +
+                    'style="width:4.5em;text-align:center;font-size:1.3em;" />' +
+                    '<input is="emby-input" type="text" class="choreName" value="' + esc(c.Name) + '" placeholder="Chore name" ' +
+                    'style="flex:1 1 10em;min-width:8em;" />' +
+                    '<label style="display:flex;align-items:center;gap:4px;">🪙<input is="emby-input" type="number" min="1" ' +
+                    'class="choreCoins" value="' + (c.Coins || 1) + '" style="width:4.5em;" /></label>' +
+                    '<label style="display:flex;align-items:center;gap:4px;">/day<input is="emby-input" type="number" min="0" ' +
+                    'class="choreMax" value="' + (c.MaxPerDay != null ? c.MaxPerDay : 1) + '" style="width:4.5em;" /></label>' +
+                    '<label class="checkboxContainer" style="margin:0;"><input is="emby-checkbox" type="checkbox" class="choreEnabled"' +
+                    (c.Enabled !== false ? ' checked' : '') + ' /><span>On</span></label>' +
+                    '<button is="emby-button" type="button" class="raised button-cancel btnRemoveChore"><span>×</span></button>' +
+                    '</div>';
+            });
+            var container = page.querySelector('#choresContainer');
+            container.innerHTML = html || '<div class="fieldDescription">No chores yet.</div>';
+            container.querySelectorAll('.btnRemoveChore').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    var idx = parseInt(this.closest('[data-idx]').getAttribute('data-idx'), 10);
+                    collectChores();
+                    chores.splice(idx, 1);
+                    renderChores();
+                });
+            });
+        }
+
+        function collectChores() {
+            page.querySelectorAll('#choresContainer .choreRow').forEach(function (row, i) {
+                var c = chores[i];
+                c.Icon = row.querySelector('.choreIcon').value.trim();
+                c.Name = row.querySelector('.choreName').value.trim() || 'Chore';
+                c.Coins = parseInt(row.querySelector('.choreCoins').value, 10) || 1;
+                c.MaxPerDay = parseInt(row.querySelector('.choreMax').value, 10) || 0;
+                c.Enabled = row.querySelector('.choreEnabled').checked;
+                if (!c.Id) { c.Id = 'chore-' + Date.now() + '-' + i; }
+            });
+        }
+
+        function refInfoText(id) {
+            var r = refResolved[normId(id)];
+            if (!r) { return id; }
+            return r.Name + ' (' + r.Type + ', ~' + r.RuntimeMinutes + 'm, 🪙' + r.CoinCost + ')';
+        }
+
+        function renderRefTitles() {
+            var html = '';
+            refItemIds.forEach(function (id, i) {
+                html += '<div class="paperList" style="padding:.5em 1em;margin-bottom:.3em;display:flex;align-items:center;gap:8px;">' +
+                    '<span style="flex:1 1 auto;">' + esc(refInfoText(id)) + '</span>' +
+                    '<button is="emby-button" type="button" class="raised button-cancel btnRemoveRef" data-idx="' + i + '"><span>×</span></button>' +
+                    '</div>';
+            });
+            var container = page.querySelector('#refTitlesContainer');
+            container.innerHTML = html || '<div class="fieldDescription">No reference titles yet — search below.</div>';
+            container.querySelectorAll('.btnRemoveRef').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    refItemIds.splice(parseInt(this.getAttribute('data-idx'), 10), 1);
+                    renderRefTitles();
+                });
+            });
+        }
+
+        function resolveRefTitles() {
+            if (!refItemIds.length || !page.querySelector('#bonusApiToken').value.trim()) { return; }
+            parentApi('items/resolve?ids=' + encodeURIComponent(refItemIds.join(','))).then(function (list) {
+                list.forEach(function (r) { refResolved[normId(r.ItemId)] = r; });
+                renderRefTitles();
+            }, function () {});
+        }
+
+        function searchRefTitles() {
+            var q = page.querySelector('#refSearch').value.trim();
+            var out = page.querySelector('#refResults');
+            if (!q) { return; }
+            if (!page.querySelector('#bonusApiToken').value.trim()) {
+                out.innerHTML = '<div class="fieldDescription">Set the API token on the General tab first.</div>';
+                return;
+            }
+            out.innerHTML = '<div class="fieldDescription">Searching…</div>';
+            parentApi('items/search?q=' + encodeURIComponent(q)).then(function (list) {
+                if (!list.length) { out.innerHTML = '<div class="fieldDescription">No matches.</div>'; return; }
+                out.innerHTML = list.map(function (r) {
+                    refResolved[normId(r.ItemId)] = r;
+                    var added = refItemIds.some(function (id) { return normId(id) === normId(r.ItemId); });
+                    return '<div class="paperList" style="padding:.5em 1em;margin-bottom:.3em;display:flex;align-items:center;gap:8px;">' +
+                        '<span style="flex:1 1 auto;">' + esc(refInfoText(r.ItemId)) + '</span>' +
+                        (added ? '<span class="fieldDescription">added</span>'
+                            : '<button is="emby-button" type="button" class="raised btnAddRef" data-id="' + esc(r.ItemId) + '"><span>Add</span></button>') +
+                        '</div>';
+                }).join('');
+                out.querySelectorAll('.btnAddRef').forEach(function (btn) {
+                    btn.addEventListener('click', function () {
+                        refItemIds.push(this.getAttribute('data-id'));
+                        renderRefTitles();
+                        searchRefTitles(); // refresh "added" markers
+                    });
+                });
+            }, function () {
+                out.innerHTML = '<div class="fieldDescription">Search failed — is the API token saved?</div>';
             });
         }
 
@@ -378,6 +586,7 @@
                     UserName: name,
                     Enabled: card.querySelector('.userEnabled').checked,
                     WarnMinutesBeforeLimit: parseInt(card.querySelector('.warnMinutes').value, 10) || 10,
+                    KidToken: card.querySelector('.kidToken').value.trim(),
                     DateOverrides: []
                 };
                 card.querySelectorAll('.weekday').forEach(function (sel) {
@@ -429,8 +638,19 @@
                 page.querySelector('#hardEnforcementMode').value =
                     cfg.HardEnforcementMode === 'DisablePlayback' ? 'DisablePlayback' : 'AccessSchedule';
 
+                chores = cfg.Chores || [];
+                refItemIds = (cfg.ReferenceItemIds || []).slice();
+                page.querySelector('#coinMinutes').value = cfg.CoinMinutes || 5;
+                page.querySelector('#bankCapCoins').value = cfg.BankCapCoins != null ? cfg.BankCapCoins : 24;
+                page.querySelector('#maxRedeemCoinsPerDay').value =
+                    cfg.MaxRedeemCoinsPerDay != null ? cfg.MaxRedeemCoinsPerDay : 6;
+                page.querySelector('#ntfyTopicUrl').value = cfg.NtfyTopicUrl || '';
+
                 renderPresets();
                 renderUsers();
+                renderChores();
+                renderRefTitles();
+                resolveRefTitles();
                 Dashboard.hideLoadingMsg();
             });
         }
@@ -438,6 +658,7 @@
         function save() {
             Dashboard.showLoadingMsg();
             collectPresets();
+            collectChores();
             ApiClient.getPluginConfiguration(pluginId).then(function (cfg) {
                 cfg.MiddayStartMinutes = timeToMinutes(page.querySelector('#middayStart').value);
                 cfg.EveningStartMinutes = timeToMinutes(page.querySelector('#eveningStart').value);
@@ -446,6 +667,12 @@
                 cfg.HardEnforcementMode = page.querySelector('#hardEnforcementMode').value;
                 cfg.Presets = presets;
                 cfg.Users = collectUsers();
+                cfg.CoinMinutes = parseInt(page.querySelector('#coinMinutes').value, 10) || 5;
+                cfg.BankCapCoins = parseInt(page.querySelector('#bankCapCoins').value, 10) || 0;
+                cfg.MaxRedeemCoinsPerDay = parseInt(page.querySelector('#maxRedeemCoinsPerDay').value, 10) || 0;
+                cfg.NtfyTopicUrl = page.querySelector('#ntfyTopicUrl').value.trim();
+                cfg.Chores = chores;
+                cfg.ReferenceItemIds = refItemIds;
                 ApiClient.updatePluginConfiguration(pluginId, cfg).then(function (r) {
                     Dashboard.processPluginConfigurationUpdateResult(r);
                 });
@@ -486,6 +713,17 @@
                 var token = Array.prototype.map.call(arr, function (b) {
                     return ('0' + b.toString(16)).slice(-2); }).join('');
                 page.querySelector('#bonusApiToken').value = token;
+            });
+
+            page.querySelector('#btnAddChore').addEventListener('click', function () {
+                collectChores();
+                chores.push({ Id: '', Name: '', Icon: '', Coins: 1, MaxPerDay: 1, Enabled: true });
+                renderChores();
+            });
+
+            page.querySelector('#btnRefSearch').addEventListener('click', searchRefTitles);
+            page.querySelector('#refSearch').addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') { e.preventDefault(); searchRefTitles(); }
             });
 
             page.querySelectorAll('.kidsLimitTab').forEach(function (btn) {

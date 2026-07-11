@@ -284,6 +284,34 @@ public class RewardsController : ControllerBase
         }).ToList<object>();
     }
 
+    /// <summary>Resolves already-configured reference item ids to names/costs (settings page).</summary>
+    /// <param name="ids">Comma-separated item ids.</param>
+    /// <param name="token">Parent shared secret.</param>
+    /// <returns>Resolved titles; unknown ids are skipped.</returns>
+    [HttpGet("items/resolve")]
+    [Produces("application/json")]
+    public ActionResult<object> ResolveItems([FromQuery] string ids, [FromQuery] string? token = null)
+    {
+        if (!ParentAuthorized(token))
+        {
+            return Unauthorized();
+        }
+
+        return (ids ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(id => new { Id = id, Title = _rewards.ResolveReferenceTitle(Config, id) })
+            .Where(x => x.Title is not null)
+            .Select(x => new
+            {
+                ItemId = x.Id,
+                x.Title!.Name,
+                Type = x.Title.IsSeries ? "Series" : "Movie",
+                x.Title.RuntimeMinutes,
+                x.Title.CoinCost,
+            })
+            .ToList<object>();
+    }
+
     // ------------------------------------------------------------------ kid API
 
     /// <summary>Serves the kid TV page. Data calls carry the token from the query string.</summary>
