@@ -21,6 +21,13 @@ public class UserLimitConfig
     /// <summary>Gets or sets the minutes-before-limit warning threshold. Default 10.</summary>
     public int WarnMinutesBeforeLimit { get; set; } = 10;
 
+    /// <summary>
+    /// Gets or sets the secret used by the kid TV page (<c>/KidsLimit/kid?token=…</c>).
+    /// Grants only self-service rights: view own wallet, claim chores, redeem coins.
+    /// Empty = kid page disabled for this user.
+    /// </summary>
+    public string KidToken { get; set; } = string.Empty;
+
     /// <summary>Gets or sets the preset id used on Mondays.</summary>
     public string MondayPresetId { get; set; } = string.Empty;
 

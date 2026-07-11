@@ -168,6 +168,21 @@ Jellyfin has no API to add a top-level sidebar entry. Add a **Custom Menu Link**
 one-tap parent entry. (The community *Plugin Pages* plugin is an optional
 alternative — not required.)
 
+## Chore rewards (coins)
+
+Kids can **earn coins for chores and bank them** — the balance never resets at
+midnight — then spend them later as extra watch time (redeemed time flows
+through the normal bonus mechanism). A TV-friendly, **picture-only kid page**
+(`/KidsLimit/kid?token=…`, per-kid token from settings) lets a non-reading
+child claim chores (emoji tiles → parent approves on the dashboard, with push
+notifications to your phone via ntfy / Pushover / Gotify / Discord / Slack /
+Telegram / Apprise API / generic webhook) and redeem coins by picking the
+poster of a favourite title — the plugin grants the time and (best effort)
+starts playback on her active session. `android-tv/` contains a minimal
+sideloadable WebView wrapper so the kid page is an app on the TV launcher.
+Design, rules (bank cap, daily redeem cap, midnight refund) and details:
+[`REWARDS.md`](REWARDS.md).
+
 ## REST API
 
 Auth is the shared token via `?token=` or the `X-KidsLimit-Token` header.
@@ -181,6 +196,18 @@ Auth is the shared token via `?token=` or the `X-KidsLimit-Token` header.
 | `POST` | `/KidsLimit/stop?user=&token=` | Immediately stop a user and hard-block them for the rest of the day |
 | `POST` | `/KidsLimit/allow?user=&token=` | Lift a `stop` hold so the user can play again (no extra time granted) |
 | `GET`  | `/KidsLimit/history/{user}?days=&token=` | Finished-day rollups (averages/history) |
+| `GET`  | `/KidsLimit/wallet/{user}?token=` | Coin balance, pending claims, recent ledger |
+| `POST` | `/KidsLimit/wallet/earn?user=&choreId=&token=` | Credit a chore's coins directly |
+| `POST` | `/KidsLimit/wallet/adjust?user=&coins=&note=&token=` | Manual coin correction (± ) |
+| `POST` | `/KidsLimit/wallet/redeem?user=&coins=&token=` | Spend coins as bonus time now |
+| `POST` | `/KidsLimit/claims/approve?user=&claimId=&token=` | Approve a kid's chore claim |
+| `POST` | `/KidsLimit/claims/reject?user=&claimId=&token=` | Reject a kid's chore claim |
+| `GET`  | `/KidsLimit/items/search?q=&token=` | Library search for reference titles |
+| `POST` | `/KidsLimit/notify/test?token=` | Send a test push to all notification targets |
+
+Kid self-service endpoints (`/KidsLimit/kid…`) use the per-user kid token
+instead and only allow viewing the own wallet, claiming a chore and redeeming
+for a configured reference title.
 
 One-tap phone shortcut / NFC / Home Assistant example:
 

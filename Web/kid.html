@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>My Coins</title>
+<style>
+    /* Kid TV page (REWARDS.md): picture-only UI for a non-reading child driving an
+       Android TV remote. Everything is big tiles, emoji, counts and sounds. The D-pad
+       arrives as arrow-key events in the WebView; focus is a huge glowing ring. */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+        background: #0e1220; color: #fff; overflow-x: hidden;
+        font-family: -apple-system, Roboto, "Segoe UI", sans-serif;
+        padding: 2vh 3vw 4vh;
+    }
+
+    .header {
+        display: flex; align-items: center; justify-content: space-between;
+        margin-bottom: 2.5vh; min-height: 11vh;
+    }
+    #kidName { font-size: 5vh; font-weight: 700; opacity: .9; }
+    #jar {
+        display: flex; align-items: center; gap: 1.2vh;
+        background: #1b2338; border-radius: 3vh; padding: 1.2vh 2.5vh;
+        font-size: 5vh; font-weight: 800;
+    }
+    #jarCoins { letter-spacing: -.5vh; font-size: 4.2vh; }
+    #jarCount { color: #ffd24a; }
+
+    .rowTitle { font-size: 4.5vh; margin: 1.5vh 0 1vh; opacity: .85; }
+    .grid { display: flex; flex-wrap: wrap; gap: 2.2vh; }
+
+    .tile {
+        position: relative; background: #1b2338; border-radius: 2.5vh;
+        outline: none; cursor: pointer; border: .6vh solid transparent;
+        transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+    }
+    .tile:focus, .tile.focused {
+        border-color: #ffd24a; transform: scale(1.08); z-index: 2;
+        box-shadow: 0 0 4vh rgba(255, 210, 74, .45);
+    }
+    .tile.disabled { opacity: .45; }
+
+    .chore { width: 22vh; height: 22vh; }
+    .chore .icon { font-size: 10vh; line-height: 1.15; }
+    .chore .name { font-size: 2.2vh; opacity: .7; max-width: 90%; text-align: center;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .badge {
+        position: absolute; top: -1.4vh; right: -1.4vh; background: #ffd24a; color: #402d00;
+        border-radius: 2.4vh; font-size: 2.8vh; font-weight: 800; padding: .5vh 1.4vh;
+    }
+    .stateBadge {
+        position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+        font-size: 9vh; background: rgba(14, 18, 32, .55); border-radius: 2vh;
+    }
+
+    .title { width: 22vh; }
+    .title .poster {
+        width: 22vh; height: 31vh; object-fit: cover; border-radius: 2vh 2vh 0 0;
+        background: #2a3350; display: block;
+    }
+    .title .name { font-size: 2.2vh; opacity: .75; padding: .8vh 1vh 1.2vh; max-width: 100%;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* Modal overlay: confirm / celebrate / error. While open, D-pad focus is trapped inside. */
+    #overlay {
+        position: fixed; inset: 0; background: rgba(5, 7, 14, .88); display: none;
+        align-items: center; justify-content: center; z-index: 10;
+    }
+    #overlay.open { display: flex; }
+    #overlayCard {
+        background: #1b2338; border-radius: 4vh; padding: 5vh 6vh; text-align: center;
+        max-width: 84vw;
+    }
+    #overlayArt { font-size: 16vh; line-height: 1.2; }
+    #overlayArt img { height: 34vh; border-radius: 2vh; }
+    #overlayCost { font-size: 6vh; font-weight: 800; color: #ffd24a; margin-top: 1.5vh; }
+    #overlayButtons { display: flex; gap: 3vh; justify-content: center; margin-top: 4vh; }
+    .obtn {
+        font-size: 7vh; padding: 1.5vh 5vh; border-radius: 3vh; border: .6vh solid transparent;
+        background: #2a3350; color: #fff; outline: none; cursor: pointer;
+        transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease;
+    }
+    .obtn:focus { border-color: #ffd24a; transform: scale(1.12);
+        box-shadow: 0 0 4vh rgba(255, 210, 74, .45); }
+
+    #status { position: fixed; bottom: 1vh; right: 2vh; font-size: 1.8vh; opacity: .3; }
+</style>
+</head>
+<body>
+    <div class="header">
+        <div id="kidName"></div>
+        <div id="jar"><span id="jarCoins"></span><span id="jarCount"></span></div>
+    </div>
+
+    <div class="rowTitle">🧹✨</div>
+    <div id="chores" class="grid"></div>
+
+    <div class="rowTitle" style="margin-top:3.5vh;">📺🍿</div>
+    <div id="titles" class="grid"></div>
+
+    <div id="overlay">
+        <div id="overlayCard">
+            <div id="overlayArt"></div>
+            <div id="overlayCost"></div>
+            <div id="overlayButtons"></div>
+        </div>
+    </div>
+    <div id="status"></div>
+
+<script>
+(function () {
+    'use strict';
+
+    var token = new URLSearchParams(location.search).get('token') || '';
+    var state = null;
+    var overlayTimer = null;
+
+    // ------------------------------------------------------------------ audio
+    var audioCtx = null;
+    function beep(freq, dur, when) {
+        try {
+            audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+            var o = audioCtx.createOscillator();
+            var g = audioCtx.createGain();
+            var t = audioCtx.currentTime + (when || 0);
+            o.frequency.value = freq;
+            o.type = 'sine';
+            g.gain.setValueAtTime(0.12, t);
+            g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+            o.connect(g); g.connect(audioCtx.destination);
+            o.start(t); o.stop(t + dur);
+        } catch (e) { /* audio is optional */ }
+    }
+    function sndMove() { beep(500, .06); }
+    function sndSelect() { beep(700, .09); beep(950, .09, .09); }
+    function sndYay() { beep(600, .1); beep(800, .1, .1); beep(1050, .18, .2); }
+    function sndNo() { beep(220, .25); }
+
+    // ------------------------------------------------------------------- api
+    function api(path, method) {
+        var sep = path.indexOf('?') >= 0 ? '&' : '?';
+        return fetch('kid/' + path + sep + 'token=' + encodeURIComponent(token), { method: method || 'GET' })
+            .then(function (r) { if (!r.ok) { throw new Error(r.status); } return r.json(); });
+    }
+
+    // ---------------------------------------------------------------- render
+    function esc(s) { return (s || '').toString().replace(/[&<>"]/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+    function coinRow(n) {
+        var shown = Math.min(n, 10);
+        var out = '';
+        for (var i = 0; i < shown; i++) { out += '🪙'; }
+        return out;
+    }
+
+    function render() {
+        if (!state) { return; }
+
+        // The page refreshes every 20 s; remember which tile the D-pad was on so the
+        // re-render doesn't yank focus back to the first tile mid-navigation.
+        var focusKey = null;
+        var active = document.activeElement;
+        if (active && active.classList && active.classList.contains('tile')) {
+            focusKey = active.getAttribute('data-kind') + ':' + active.getAttribute('data-id');
+        }
+
+        document.getElementById('kidName').textContent = state.Name;
+        document.getElementById('jarCoins').textContent = coinRow(state.CoinBalance);
+        document.getElementById('jarCount').textContent = state.CoinBalance;
+
+        var chores = document.getElementById('chores');
+        chores.innerHTML = state.Chores.map(function (c) {
+            var done = c.MaxPerDay > 0 && c.ClaimedToday >= c.MaxPerDay && c.Pending === 0;
+            var pending = c.Pending > 0;
+            var blocked = done || pending || (c.MaxPerDay > 0 && c.ClaimedToday >= c.MaxPerDay);
+            return '<div class="tile chore' + (blocked ? ' disabled' : '') + '" tabindex="0"' +
+                ' data-kind="chore" data-id="' + esc(c.Id) + '" data-blocked="' + (blocked ? '1' : '0') + '">' +
+                '<div class="icon">' + esc(c.Icon || '⭐') + '</div>' +
+                '<div class="name">' + esc(c.Name) + '</div>' +
+                '<div class="badge">🪙' + c.Coins + '</div>' +
+                (pending ? '<div class="stateBadge">⏳</div>' : (done ? '<div class="stateBadge">✅</div>' : '')) +
+                '</div>';
+        }).join('');
+
+        var titles = document.getElementById('titles');
+        titles.innerHTML = state.Titles.map(function (t) {
+            var blocked = !t.Affordable;
+            return '<div class="tile title' + (blocked ? ' disabled' : '') + '" tabindex="0"' +
+                ' data-kind="title" data-id="' + esc(t.ItemId) + '" data-blocked="' + (blocked ? '1' : '0') + '">' +
+                '<img class="poster" src="kid/image/' + esc(t.ItemId) + '?token=' + encodeURIComponent(token) + '" alt="" />' +
+                '<div class="name">' + esc(t.Name) + '</div>' +
+                '<div class="badge">🪙' + t.CoinCost + '</div>' +
+                '</div>';
+        }).join('');
+
+        if (!document.getElementById('overlay').classList.contains('open')) {
+            if (focusKey) {
+                var again = document.querySelector(
+                    '.tile[data-kind="' + focusKey.split(':')[0] + '"][data-id="' + focusKey.split(':')[1] + '"]');
+                if (again) { again.focus(); return; }
+            }
+            focusFirst();
+        }
+    }
+
+    function load() {
+        api('state').then(function (s) {
+            state = s;
+            render();
+            document.getElementById('status').textContent = new Date().toLocaleTimeString();
+        }).catch(function () {
+            document.getElementById('status').textContent = '⚠';
+        });
+    }
+
+    // --------------------------------------------------------------- overlay
+    function openOverlay(artHtml, costHtml, buttons) {
+        if (overlayTimer) { clearTimeout(overlayTimer); overlayTimer = null; }
+        document.getElementById('overlayArt').innerHTML = artHtml;
+        document.getElementById('overlayCost').innerHTML = costHtml || '';
+        var bar = document.getElementById('overlayButtons');
+        bar.innerHTML = '';
+        (buttons || []).forEach(function (b) {
+            var el = document.createElement('button');
+            el.className = 'obtn';
+            el.textContent = b.label;
+            el.onclick = function () { sndSelect(); b.action(); };
+            bar.appendChild(el);
+        });
+        document.getElementById('overlay').classList.add('open');
+        var first = bar.querySelector('.obtn');
+        if (first) { first.focus(); }
+    }
+
+    function closeOverlay() {
+        document.getElementById('overlay').classList.remove('open');
+        if (overlayTimer) { clearTimeout(overlayTimer); overlayTimer = null; }
+        focusFirst();
+    }
+
+    function flashOverlay(artHtml, costHtml, ms) {
+        openOverlay(artHtml, costHtml, []);
+        overlayTimer = setTimeout(function () { closeOverlay(); load(); }, ms || 2500);
+    }
+
+    // --------------------------------------------------------------- actions
+    function onActivate(tile) {
+        if (tile.getAttribute('data-blocked') === '1') { sndNo(); return; }
+        var kind = tile.getAttribute('data-kind');
+        var id = tile.getAttribute('data-id');
+        sndSelect();
+
+        if (kind === 'chore') {
+            var chore = state.Chores.filter(function (c) { return c.Id === id; })[0];
+            if (!chore) { return; }
+            openOverlay(
+                '<span style="font-size:16vh;">' + esc(chore.Icon || '⭐') + '</span>',
+                '🪙 × ' + chore.Coins + ' ?',
+                [
+                    { label: '👍', action: function () { claim(id); } },
+                    { label: '👎', action: closeOverlay },
+                ]);
+        } else if (kind === 'title') {
+            var title = state.Titles.filter(function (t) { return t.ItemId === id; })[0];
+            if (!title) { return; }
+            openOverlay(
+                '<img src="kid/image/' + esc(id) + '?token=' + encodeURIComponent(token) + '" alt="" />',
+                '🪙 × ' + title.CoinCost + ' → ▶️ ?',
+                [
+                    { label: '▶️', action: function () { redeem(id); } },
+                    { label: '↩️', action: closeOverlay },
+                ]);
+        }
+    }
+
+    function claim(choreId) {
+        api('claim?choreId=' + encodeURIComponent(choreId), 'POST').then(function (r) {
+            if (r.Ok) {
+                sndYay();
+                flashOverlay('📨 ⏳', '', 2200); // sent to the parent, wait for the thumbs-up
+            } else {
+                sndNo();
+                flashOverlay('🚫', '', 1800);
+            }
+        }).catch(function () { sndNo(); flashOverlay('⚠️', '', 1800); });
+    }
+
+    function redeem(itemId) {
+        api('redeem?itemId=' + encodeURIComponent(itemId), 'POST').then(function (r) {
+            if (r.Error) {
+                sndNo();
+                // balance => not enough coins; dailycap => enough saved but today's spend limit hit.
+                flashOverlay(r.Error === 'dailycap' ? '🕐🚫' : '🪙🚫', '', 2200);
+            } else {
+                sndYay();
+                // Played on her Jellyfin session, or a nudge to open the Jellyfin app.
+                flashOverlay(r.Played ? '🎉 ▶️' : '🎉 📺 👆', '', r.Played ? 2500 : 4000);
+            }
+        }).catch(function () { sndNo(); flashOverlay('⚠️', '', 1800); });
+    }
+
+    // --------------------------------------------- D-pad spatial navigation
+    function focusables() {
+        var overlay = document.getElementById('overlay');
+        var scope = overlay.classList.contains('open') ? overlay : document;
+        return Array.prototype.slice.call(scope.querySelectorAll('.tile, .obtn'));
+    }
+
+    function focusFirst() {
+        var els = focusables();
+        if (els.length && (!document.activeElement || document.activeElement === document.body ||
+            els.indexOf(document.activeElement) < 0)) {
+            els[0].focus();
+        }
+    }
+
+    function move(dir) {
+        var els = focusables();
+        var cur = document.activeElement;
+        if (!cur || els.indexOf(cur) < 0) { if (els[0]) { els[0].focus(); } return; }
+        var cr = cur.getBoundingClientRect();
+        var cx = cr.left + cr.width / 2, cy = cr.top + cr.height / 2;
+        var best = null, bestScore = Infinity;
+        els.forEach(function (el) {
+            if (el === cur) { return; }
+            var r = el.getBoundingClientRect();
+            var x = r.left + r.width / 2, y = r.top + r.height / 2;
+            var dx = x - cx, dy = y - cy;
+            var inDir = (dir === 'left' && dx < -1) || (dir === 'right' && dx > 1) ||
+                        (dir === 'up' && dy < -1) || (dir === 'down' && dy > 1);
+            if (!inDir) { return; }
+            // Penalise off-axis distance so navigation feels like a grid.
+            var primary = (dir === 'left' || dir === 'right') ? Math.abs(dx) : Math.abs(dy);
+            var secondary = (dir === 'left' || dir === 'right') ? Math.abs(dy) : Math.abs(dx);
+            var score = primary + secondary * 2.5;
+            if (score < bestScore) { bestScore = score; best = el; }
+        });
+        if (best) { best.focus(); sndMove(); }
+    }
+
+    document.addEventListener('keydown', function (e) {
+        var overlayOpen = document.getElementById('overlay').classList.contains('open');
+        switch (e.key) {
+            case 'ArrowLeft': move('left'); e.preventDefault(); break;
+            case 'ArrowRight': move('right'); e.preventDefault(); break;
+            case 'ArrowUp': move('up'); e.preventDefault(); break;
+            case 'ArrowDown': move('down'); e.preventDefault(); break;
+            case 'Enter':
+            case ' ':
+                var el = document.activeElement;
+                if (el && el.classList.contains('tile')) { onActivate(el); e.preventDefault(); }
+                else if (el && el.classList.contains('obtn')) { el.click(); e.preventDefault(); }
+                break;
+            case 'Escape':
+            case 'Backspace':
+            case 'GoBack':
+                if (overlayOpen) { closeOverlay(); e.preventDefault(); }
+                break;
+        }
+    });
+
+    document.addEventListener('click', function (e) {
+        var tile = e.target.closest ? e.target.closest('.tile') : null;
+        if (tile) { onActivate(tile); }
+    });
+
+    load();
+    setInterval(load, 20000);
+})();
+</script>
+</body>
+</html>

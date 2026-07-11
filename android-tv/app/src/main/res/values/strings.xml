@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">My Coins</string>
+    <string name="url_prompt">Kid page URL (from Jellyfin plugin settings)</string>
+    <string name="save">Save</string>
+</resources>

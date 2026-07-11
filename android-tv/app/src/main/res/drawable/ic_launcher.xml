@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A simple gold coin. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp" android:height="48dp"
+    android:viewportWidth="48" android:viewportHeight="48">
+    <path android:fillColor="#0E1220"
+        android:pathData="M0,0h48v48h-48z" />
+    <path android:fillColor="#FFD24A"
+        android:pathData="M24,6a18,18 0 1,0 0.001,0z" />
+    <path android:fillColor="#C79A1F"
+        android:pathData="M24,10a14,14 0 1,0 0.001,0z" />
+    <path android:fillColor="#FFD24A"
+        android:pathData="M21,15h6v3h3v3h-3v6h3v3h-3v3h-6v-3h-3v-3h3v-6h-3v-3h3z" />
+</vector>

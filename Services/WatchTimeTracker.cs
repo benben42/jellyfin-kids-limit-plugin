@@ -26,6 +26,8 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
 
     private readonly ISessionManager _sessionManager;
     private readonly StateStore _store;
+    private readonly WalletStore _wallets;
+    private readonly RewardsService _rewards;
     private readonly HardBlockEnforcer _enforcer;
     private readonly PlaybackTerminator _terminator;
     private readonly ILogger<WatchTimeTracker> _logger;
@@ -37,18 +39,24 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
     /// </summary>
     /// <param name="sessionManager">Session manager.</param>
     /// <param name="store">State store.</param>
+    /// <param name="wallets">Wallet store.</param>
+    /// <param name="rewards">Rewards service.</param>
     /// <param name="enforcer">Hard-block enforcer.</param>
     /// <param name="terminator">Playback terminator.</param>
     /// <param name="logger">Logger.</param>
     public WatchTimeTracker(
         ISessionManager sessionManager,
         StateStore store,
+        WalletStore wallets,
+        RewardsService rewards,
         HardBlockEnforcer enforcer,
         PlaybackTerminator terminator,
         ILogger<WatchTimeTracker> logger)
     {
         _sessionManager = sessionManager;
         _store = store;
+        _wallets = wallets;
+        _rewards = rewards;
         _enforcer = enforcer;
         _terminator = terminator;
         _logger = logger;
@@ -60,6 +68,10 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
         var dataDir = Plugin.Instance?.DataFolderPath
             ?? throw new InvalidOperationException("Plugin instance not initialized.");
         _store.Initialize(dataDir);
+        _wallets.Initialize(dataDir);
+
+        // Refund redeemed-but-unwatched coins when a day rolls over (REWARDS.md).
+        _store.DayFinished = _rewards.RefundFinishedDay;
 
         _sessionManager.PlaybackStart += OnPlaybackStart;
         _sessionManager.PlaybackProgress += OnPlaybackProgress;

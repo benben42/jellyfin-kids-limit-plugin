@@ -47,6 +47,13 @@ public class DailyState
     public long SessionBonusSeconds { get; set; }
 
     /// <summary>
+    /// Gets or sets the portion of <see cref="DailyBonusSeconds"/> that was paid for with
+    /// wallet coins today. Used by the midnight rollover to refund redeemed-but-unwatched
+    /// time back to the wallet (REWARDS.md).
+    /// </summary>
+    public long RedeemedSeconds { get; set; }
+
+    /// <summary>
     /// Gets or sets a value indicating whether a parent forced an immediate stop via the
     /// dashboard ("Stop now"). While set, the user is hard-blocked for the rest of the day
     /// regardless of remaining budget. Cleared by granting bonus, the Allow endpoint, or the

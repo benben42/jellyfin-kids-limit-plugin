@@ -28,6 +28,7 @@
         var page;
         var token = '';
         var refreshTimer;
+        var chores = []; // from plugin config; drives the one-tap earn buttons
 
         function esc(s) { return (s || '').toString().replace(/[&<>"]/g, function (c) {
             return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
@@ -79,6 +80,8 @@
                 windowRow('Evening', s.SecondsEvening, s.EveningCapMinutes) +
                 '</div>' +
                 '<div id="hist-' + esc(s.UserId) + '" class="fieldDescription">History…</div>' +
+                '<div id="wallet-' + esc(s.UserId) + '" style="margin:.5em 0;padding:.5em .75em;' +
+                'border:1px solid rgba(127,127,127,.35);border-radius:6px;">Coins…</div>' +
                 '<div style="margin-top:.5em;">' +
                 bonusBtn(s.UserId, 10) + bonusBtn(s.UserId, 30) + bonusBtn(s.UserId, 60) +
                 '<button is="emby-button" type="button" class="raised btnCustom" data-userid="' + esc(s.UserId) + '"><span>+ custom</span></button>' +
@@ -126,6 +129,96 @@
                 .then(function () { setTimeout(load, 500); }, function () { Dashboard.alert('Failed to allow.'); });
         }
 
+        function renderWallet(userId, w) {
+            var el = page.querySelector('#wallet-' + userId);
+            if (!el) { return; }
+
+            var html = '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+                '<span>🪙 <strong>' + w.CoinBalance + '</strong> coin(s) = ' + fmt(w.CoinBalance * w.CoinMinutes * 60) +
+                (w.CoinsRedeemedToday ? ' <span class="fieldDescription">(redeemed today: ' + w.CoinsRedeemedToday + ')</span>' : '') +
+                '</span></div>';
+
+            (w.PendingClaims || []).forEach(function (c) {
+                html += '<div style="display:flex;align-items:center;gap:.5em;margin:.25em 0;">' +
+                    '<span style="flex:1 1 auto;">⏳ ' + esc(c.ChoreName) + ' <strong>🪙' + c.Coins + '</strong>' +
+                    ' <span class="fieldDescription">' + new Date(c.ClaimedAtUtc).toLocaleTimeString() + '</span></span>' +
+                    '<button is="emby-button" type="button" class="raised button-submit btnClaim" data-userid="' + esc(userId) +
+                    '" data-claim="' + esc(c.Id) + '" data-op="approve" style="min-width:3em;"><span>✓</span></button>' +
+                    '<button is="emby-button" type="button" class="raised button-cancel btnClaim" data-userid="' + esc(userId) +
+                    '" data-claim="' + esc(c.Id) + '" data-op="reject" style="min-width:3em;"><span>✗</span></button></div>';
+            });
+
+            html += '<div style="margin-top:.4em;">';
+            chores.forEach(function (c) {
+                if (c.Enabled === false) { return; }
+                html += '<button is="emby-button" type="button" class="raised btnEarn" data-userid="' + esc(userId) +
+                    '" data-chore="' + esc(c.Id) + '" title="' + esc(c.Name) + '">' +
+                    '<span>+' + esc(c.Icon || '⭐') + '🪙' + c.Coins + '</span></button>';
+            });
+            html += '<button is="emby-button" type="button" class="raised btnRedeemCoins" data-userid="' + esc(userId) +
+                '"><span>Spend coins…</span></button>' +
+                '<button is="emby-button" type="button" class="raised btnAdjustCoins" data-userid="' + esc(userId) +
+                '"><span>± adjust</span></button></div>';
+
+            el.innerHTML = html;
+
+            el.querySelectorAll('.btnClaim').forEach(function (b) {
+                b.onclick = function () {
+                    var uid = this.getAttribute('data-userid');
+                    api('claims/' + this.getAttribute('data-op') +
+                        '?user=' + encodeURIComponent(uid) +
+                        '&claimId=' + encodeURIComponent(this.getAttribute('data-claim')), 'POST')
+                        .then(function (wallet) { renderWallet(uid, wallet); },
+                              function () { Dashboard.alert('Claim update failed.'); });
+                };
+            });
+            el.querySelectorAll('.btnEarn').forEach(function (b) {
+                b.onclick = function () {
+                    var uid = this.getAttribute('data-userid');
+                    api('wallet/earn?user=' + encodeURIComponent(uid) +
+                        '&choreId=' + encodeURIComponent(this.getAttribute('data-chore')), 'POST')
+                        .then(function (wallet) { renderWallet(uid, wallet); },
+                              function () { Dashboard.alert('Failed to add coins.'); });
+                };
+            });
+            el.querySelectorAll('.btnRedeemCoins').forEach(function (b) {
+                b.onclick = function () {
+                    var uid = this.getAttribute('data-userid');
+                    var v = prompt('Coins to spend as watch time now:', '3');
+                    if (v === null) { return; }
+                    var n = parseInt(v, 10);
+                    if (!n || n <= 0) { return; }
+                    api('wallet/redeem?user=' + encodeURIComponent(uid) + '&coins=' + n, 'POST')
+                        .then(function (r) {
+                            if (r.Error === 'balance') { Dashboard.alert('Not enough coins.'); }
+                            else if (r.Error === 'dailycap') { Dashboard.alert('Daily redeem cap reached.'); }
+                            load();
+                        }, function () { Dashboard.alert('Redeem failed.'); });
+                };
+            });
+            el.querySelectorAll('.btnAdjustCoins').forEach(function (b) {
+                b.onclick = function () {
+                    var uid = this.getAttribute('data-userid');
+                    var v = prompt('Coin adjustment (negative to remove):', '1');
+                    if (v === null) { return; }
+                    var n = parseInt(v, 10);
+                    if (!n) { return; }
+                    api('wallet/adjust?user=' + encodeURIComponent(uid) + '&coins=' + n, 'POST')
+                        .then(function (wallet) { renderWallet(uid, wallet); },
+                              function () { Dashboard.alert('Adjust failed.'); });
+                };
+            });
+        }
+
+        function loadWallet(userId) {
+            api('wallet/' + encodeURIComponent(userId)).then(function (w) {
+                renderWallet(userId, w);
+            }, function () {
+                var el = page.querySelector('#wallet-' + userId);
+                if (el) { el.textContent = 'Coins unavailable.'; }
+            });
+        }
+
         function loadHistory(userId) {
             api('history/' + encodeURIComponent(userId) + '?days=7').then(function (hist) {
                 var el = page.querySelector('#hist-' + userId);
@@ -145,7 +238,7 @@
                     ' Updated ' + new Date().toLocaleTimeString() + '.';
                 page.querySelector('#cards').innerHTML = list.map(renderCard).join('');
                 wire();
-                list.forEach(function (s) { loadHistory(s.UserId); });
+                list.forEach(function (s) { loadHistory(s.UserId); loadWallet(s.UserId); });
             }, function () {
                 page.querySelector('#dashStatus').textContent = 'Failed to load status. Check the API token in settings.';
             });
@@ -156,6 +249,7 @@
             Dashboard.showLoadingMsg();
             ApiClient.getPluginConfiguration(pluginId).then(function (cfg) {
                 token = cfg.BonusApiToken || '';
+                chores = cfg.Chores || [];
                 Dashboard.hideLoadingMsg();
                 if (!token) {
                     page.querySelector('#dashStatus').innerHTML =
