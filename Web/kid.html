@@ -18,6 +18,16 @@
         --accent: #ffd24a;
         --accent-ink: #3a2a00;
         --good: #58e08b;
+
+        /* Tile geometry lives in variables so the layout can be resized in one place.
+           Defaults are the TV (landscape 16:9) values — sized off viewport height so
+           the grid fills a big screen. The media queries below re-point these at
+           width-aware clamp() values for phones/tablets, where height is the WRONG
+           axis to size from (it's the long one in portrait). flex-wrap then picks the
+           column count on its own: ~2 across on a phone, more on a tablet. */
+        --tile: 21vh;        /* square chore/time tile + poster column width */
+        --poster-h: 31.5vh;  /* poster height, kept at a 2:3 ratio to --tile */
+        --grid-gap: 2.6vh;
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html { scroll-behavior: smooth; }
@@ -77,7 +87,7 @@
         font-size: 2.1vh; font-weight: 800; opacity: .85; background: rgba(255,255,255,.1);
         padding: .6vh 1.8vh; border-radius: 3vh; letter-spacing: .05vh;
     }
-    .grid { display: flex; flex-wrap: wrap; gap: 2.6vh; align-items: flex-start; }
+    .grid { display: flex; flex-wrap: wrap; gap: var(--grid-gap); align-items: flex-start; }
 
     .tile {
         position: relative; outline: none; cursor: pointer;
@@ -109,7 +119,7 @@
 
     /* square tiles (chores + extra time) share one size so the rows line up */
     .chore, .timeTile {
-        width: 21vh; height: 21vh; background: linear-gradient(150deg, var(--card2), var(--card));
+        width: var(--tile); height: var(--tile); background: linear-gradient(150deg, var(--card2), var(--card));
         box-shadow: 0 1.2vh 3vh rgba(0,0,0,.3); gap: .6vh;
     }
     .chore .icon { font-size: 9vh; line-height: 1.1; }
@@ -135,11 +145,11 @@
     .timeTile .icon { font-size: 8.5vh; line-height: 1.1; }
     .timeTile .name { font-size: 3vh; font-weight: 800; color: var(--good); opacity: 1; }
 
-    /* titles (library posters) — same 21vh column width as the square tiles */
-    .title { width: 21vh; }
-    .title .posterWrap { position: relative; width: 21vh; }
+    /* titles (library posters) — same column width as the square tiles */
+    .title { width: var(--tile); }
+    .title .posterWrap { position: relative; width: var(--tile); }
     .title .poster {
-        width: 21vh; height: 31.5vh; object-fit: cover; border-radius: 2.4vh;
+        width: var(--tile); height: var(--poster-h); object-fit: cover; border-radius: 2.4vh;
         background: linear-gradient(150deg, var(--card2), var(--card));
         display: block; box-shadow: 0 1.4vh 3.5vh rgba(0,0,0,.4);
     }
@@ -156,7 +166,7 @@
     .title .name { padding-top: .9vh; }
 
     #more { display: flex; align-items: center; justify-content: center;
-        width: 21vh; height: 31.5vh; font-size: 6vh; opacity: .5; }
+        width: var(--tile); height: var(--poster-h); font-size: 6vh; opacity: .5; }
     #more.spin { animation: spin 1s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -189,6 +199,72 @@
         box-shadow: 0 0 5vh rgba(255, 210, 74, .55); }
 
     #status { position: fixed; bottom: 1vh; right: 2vh; font-size: 1.7vh; opacity: .25; }
+
+    /* ================= responsive: tablets & phones =================
+       The base rules above assume a landscape 16:9 TV, where sizing off viewport
+       HEIGHT fills the screen. In portrait the tall axis is height, so we re-size
+       everything off WIDTH instead (vw + clamp). clamp(min, vw, max) keeps tiles
+       tappable on a small phone and stops them ballooning on a big tablet, while
+       flex-wrap chooses how many fit per row. Fonts get the same treatment so text
+       stays proportional to the tiles rather than to the (now huge) height. */
+    @media (orientation: portrait) {
+        :root {
+            --tile: clamp(128px, 42vw, 210px);
+            --poster-h: clamp(192px, 63vw, 315px); /* 1.5 × --tile, keeps the 2:3 poster */
+            --grid-gap: clamp(12px, 3.4vw, 26px);
+        }
+        body { padding: 2vh 4vw 8vh; }
+
+        .header { min-height: 0; flex-wrap: wrap; gap: 2vw; margin-bottom: 2vh; }
+        #kidName { font-size: clamp(22px, 6.5vw, 44px); gap: 2vw; }
+        .wallet { gap: 2.5vw; }
+        .chipBox { border-radius: 999px; padding: 1.2vh 3vw; gap: 2vw; }
+        #jarCoins { font-size: clamp(18px, 5vw, 34px); letter-spacing: -.3vw; }
+        #jarCount { font-size: clamp(22px, 6.5vw, 44px); }
+        #today .sun { font-size: clamp(16px, 4.5vw, 30px); }
+        #today .todayCoins { font-size: clamp(15px, 4vw, 26px); letter-spacing: -.2vw; }
+        #todayCount { font-size: clamp(18px, 5.5vw, 36px); }
+
+        .section { margin-top: clamp(16px, 4vw, 30px); }
+        .rowTitle { font-size: clamp(18px, 5.5vw, 32px); margin-bottom: 2vh; gap: 2vw; }
+        .rowTitle .pill { font-size: clamp(12px, 3.2vw, 19px); padding: .5vh 2.5vw; }
+
+        .chore .icon { font-size: calc(var(--tile) * .42); }
+        .chore .clipart { width: 62%; height: 62%; }
+        .timeTile .icon { font-size: calc(var(--tile) * .4); }
+        .timeTile .name { font-size: clamp(15px, 4vw, 27px); }
+        .chore .name, .title .name { font-size: clamp(12px, 3.2vw, 19px); }
+        .badge { font-size: clamp(14px, 3.6vw, 23px); }
+        .stateBadge { font-size: calc(var(--tile) * .4); }
+
+        /* overlay: also switch to width-based so the confirm card never overflows */
+        #overlayCard { padding: 4vw 6vw; border-radius: 6vw; max-width: 90vw; }
+        #overlayArt { font-size: clamp(64px, 22vw, 140px); }
+        #overlayArt img { height: clamp(180px, 55vw, 320px); }
+        #overlayCost { font-size: clamp(26px, 8vw, 50px); margin-top: 2vh; }
+        #overlayButtons { gap: 6vw; margin-top: 4vh; }
+        .obtn { font-size: clamp(34px, 11vw, 64px); padding: 1.4vh 7vw; border-radius: 4vw; }
+        #status { font-size: 12px; }
+    }
+
+    /* Narrow phones: the name + both coin chips won't fit on one row, so drop the
+       wallet onto its own line and let the two chips share the full width. */
+    @media (orientation: portrait) and (max-width: 520px) {
+        #kidName { flex: 1 1 100%; }
+        .wallet { width: 100%; justify-content: space-between; }
+    }
+
+    /* Phone held sideways: landscape but very short. The height-based defaults shrink
+       tiles to thumbnails, so give the geometry a comfortable floor. */
+    @media (orientation: landscape) and (max-height: 560px) {
+        :root {
+            --tile: max(120px, 20vh);
+            --poster-h: max(180px, 30vh);
+            --grid-gap: max(12px, 2.4vh);
+        }
+        #kidName { font-size: clamp(22px, 5vh, 40px); }
+        #jarCount { font-size: clamp(22px, 5vh, 40px); }
+    }
 </style>
 </head>
 <body>
