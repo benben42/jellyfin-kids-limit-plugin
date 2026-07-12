@@ -1,0 +1,10 @@
+<svg viewBox="0 0 120 120" stroke-linejoin="round" stroke-linecap="round" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Make the bed">
+  <rect x="4" y="4" width="112" height="112" rx="28" fill="#CFE7FF"/>
+  <rect x="20" y="46" width="12" height="44" rx="4" fill="#B07A50" stroke="#3B3357" stroke-width="3.2"/>
+  <rect x="88" y="58" width="12" height="32" rx="4" fill="#B07A50" stroke="#3B3357" stroke-width="3.2"/>
+  <rect x="26" y="62" width="68" height="18" rx="7" fill="#FFFFFF" stroke="#3B3357" stroke-width="3.2"/>
+  <path d="M56 62 h38 a7 7 0 0 1 7 7 v4 a7 7 0 0 1-7 7 H56 Z" fill="#FF8FA3" stroke="#3B3357" stroke-width="3.2"/>
+  <rect x="30" y="52" width="26" height="15" rx="7" fill="#FFF0BE" stroke="#3B3357" stroke-width="3.2" transform="rotate(-6 43 59)"/>
+  <rect x="24" y="80" width="6" height="12" rx="2" fill="#946340"/>
+  <rect x="90" y="80" width="6" height="12" rx="2" fill="#946340"/>
+</svg>

@@ -25,6 +25,7 @@
     <EmbeddedResource Include="Web\dashboard.html" />
     <EmbeddedResource Include="Web\kid.html" />
     <EmbeddedResource Include="Web\parent.html" />
+    <EmbeddedResource Include="Web\clipart\*.svg" />
   </ItemGroup>
 
 </Project>

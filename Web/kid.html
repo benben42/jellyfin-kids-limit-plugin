@@ -113,6 +113,8 @@
         box-shadow: 0 1.2vh 3vh rgba(0,0,0,.3); gap: .6vh;
     }
     .chore .icon { font-size: 9vh; line-height: 1.1; }
+    /* Placeholder clipart shown instead of the emoji when a chore has one (and no photo). */
+    .chore .clipart { width: 13vh; height: 13vh; object-fit: contain; }
     .chore .name, .title .name {
         font-size: 2.1vh; opacity: .75; max-width: 92%; text-align: center;
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -322,6 +324,15 @@
 
     var lastChoresSig = '';
 
+    // The tile face: the chore's placeholder clipart if it has one, else its emoji.
+    // (A real photo, when that lands, will take precedence over both.)
+    function choreFace(c) {
+        if (c.Clipart) {
+            return '<img class="clipart" src="/KidsLimit/clipart/' + esc(c.Clipart) + '" alt="" />';
+        }
+        return '<div class="icon">' + esc(c.Icon || '⭐') + '</div>';
+    }
+
     function renderChores() {
         var section = document.getElementById('choreSection');
         var chores = state.Chores || [];
@@ -346,7 +357,7 @@
             var blocked = pending || done || (c.MaxPerDay > 0 && c.ClaimedToday >= c.MaxPerDay);
             return '<div class="tile chore' + (blocked ? ' disabled' : '') + '" tabindex="0"' +
                 ' data-kind="chore" data-id="' + esc(c.Id) + '" data-blocked="' + (blocked ? '1' : '0') + '">' +
-                '<div class="icon">' + esc(c.Icon || '⭐') + '</div>' +
+                choreFace(c) +
                 '<div class="name">' + esc(c.Name) + '</div>' +
                 '<div class="badge">' + coin() + c.Coins + '</div>' +
                 (pending ? '<div class="stateBadge">⏳</div>' : (done ? '<div class="stateBadge">✅</div>' : '')) +
@@ -529,8 +540,11 @@
         if (kind === 'chore') {
             var chore = (state.Chores || []).filter(function (c) { return c.Id === id; })[0];
             if (!chore) { return; }
+            var face = chore.Clipart
+                ? '<img src="/KidsLimit/clipart/' + esc(chore.Clipart) + '" alt="" style="width:22vh;height:22vh;object-fit:contain;" />'
+                : '<span style="font-size:16vh;">' + esc(chore.Icon || '⭐') + '</span>';
             openOverlay(
-                '<span style="font-size:16vh;">' + esc(chore.Icon || '⭐') + '</span>',
+                face,
                 coin() + ' × ' + chore.Coins + ' ?',
                 [
                     { label: '👍', go: true, action: function () { claim(id); } },

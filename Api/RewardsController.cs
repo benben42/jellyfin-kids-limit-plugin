@@ -511,6 +511,7 @@ public class RewardsController : ControllerBase
             c.Id,
             c.Name,
             c.Icon,
+            c.Clipart,
             c.Coins,
             c.MaxPerDay,
             ClaimedToday = RewardsService.ClaimedToday(wallet, c.Id, today),
@@ -723,6 +724,34 @@ public class RewardsController : ControllerBase
         }
 
         return NotFound();
+    }
+
+    /// <summary>
+    /// Serves a built-in chore placeholder clipart as SVG. Public and cacheable — the art is
+    /// static and carries no user data. Used by the kid tile (when a chore has no photo) and by
+    /// the config-page picker. The key is validated against a fixed allow-list so it can never
+    /// be used to fetch arbitrary embedded resources.
+    /// </summary>
+    /// <param name="key">The clipart key, e.g. "make-bed".</param>
+    /// <returns>The SVG image, or 404 for an unknown key.</returns>
+    [HttpGet("clipart/{key}")]
+    public ActionResult Clipart([FromRoute] string key)
+    {
+        var resource = ChoreClipart.ResourceName(key);
+        if (resource is null)
+        {
+            return NotFound();
+        }
+
+        using var stream = GetType().Assembly.GetManifestResourceStream(resource);
+        if (stream is null)
+        {
+            return NotFound();
+        }
+
+        using var reader = new StreamReader(stream);
+        Response.Headers.CacheControl = "public, max-age=604800";
+        return Content(reader.ReadToEnd(), "image/svg+xml");
     }
 
     // ------------------------------------------------------------------ helpers

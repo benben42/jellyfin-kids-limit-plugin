@@ -1,0 +1,15 @@
+<svg viewBox="0 0 120 120" stroke-linejoin="round" stroke-linecap="round" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Feed the pet">
+  <rect x="4" y="4" width="112" height="112" rx="28" fill="#FFEBC0"/>
+  <g transform="rotate(-18 60 40)">
+    <rect x="42" y="34" width="36" height="12" rx="6" fill="#FFFFFF" stroke="#3B3357" stroke-width="3.2"/>
+    <circle cx="44" cy="40" r="8" fill="#FFFFFF" stroke="#3B3357" stroke-width="3.2"/>
+    <circle cx="76" cy="40" r="8" fill="#FFFFFF" stroke="#3B3357" stroke-width="3.2"/>
+  </g>
+  <path d="M34 66 h52 a4 4 0 0 1 4 4 c0 14-12 24-30 24 s-30-10-30-24 a4 4 0 0 1 4-4 Z" fill="#FF6B4A" stroke="#3B3357" stroke-width="3.2"/>
+  <ellipse cx="60" cy="66" rx="28" ry="9" fill="#FF7A5C" stroke="#3B3357" stroke-width="3.2"/>
+  <g fill="#A05A2C">
+    <circle cx="50" cy="65" r="3.4"/>
+    <circle cx="60" cy="68" r="3.4"/>
+    <circle cx="70" cy="65" r="3.4"/>
+  </g>
+</svg>

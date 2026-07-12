@@ -1,0 +1,8 @@
+<svg viewBox="0 0 120 120" stroke-linejoin="round" stroke-linecap="round" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Clothes in the laundry basket">
+  <rect x="4" y="4" width="112" height="112" rx="28" fill="#E9E0FF"/>
+  <path d="M46 44 q14-8 28 0 q-4 10-14 10 q-10 0-14-10 Z" fill="#56A8E8" stroke="#3B3357" stroke-width="3.2"/>
+  <path d="M38 56 q10-9 22-4 q-2 9-11 10 q-9 0-11-6 Z" fill="#FFC93C" stroke="#3B3357" stroke-width="3.2"/>
+  <path d="M34 62 h52 l-6 38 h-40 Z" fill="#D89A5B" stroke="#3B3357" stroke-width="3.2"/>
+  <rect x="30" y="58" width="60" height="10" rx="5" fill="#C98A4B" stroke="#3B3357" stroke-width="3.2"/>
+  <path d="M45 70 l-3 26 M60 70 l0 26 M75 70 l3 26" stroke="#B87B3C" stroke-width="3" fill="none"/>
+</svg>

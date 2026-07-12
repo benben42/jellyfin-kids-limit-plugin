@@ -1,0 +1,10 @@
+<svg viewBox="0 0 120 120" stroke-linejoin="round" stroke-linecap="round" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Help baby brother">
+  <rect x="4" y="4" width="112" height="112" rx="28" fill="#FFE0EC"/>
+  <path d="M62 34 q4 0 4 4 v2 h-8 v-2 q0-4 4-4 Z" fill="#FFCF8A" stroke="#3B3357" stroke-width="2.6"/>
+  <rect x="46" y="40" width="32" height="12" rx="4" fill="#FFC93C" stroke="#3B3357" stroke-width="3.2"/>
+  <path d="M48 52 h28 a6 6 0 0 1 6 6 v28 a10 10 0 0 1-10 10 H52 a10 10 0 0 1-10-10 V58 a6 6 0 0 1 6-6 Z" fill="#FFFFFF" stroke="#3B3357" stroke-width="3.2"/>
+  <path d="M44 74 h36 v12 a10 10 0 0 1-10 10 H54 a10 10 0 0 1-10-10 Z" fill="#FFF0BE"/>
+  <path d="M48 52 h28 a6 6 0 0 1 6 6 v28 a10 10 0 0 1-10 10 H52 a10 10 0 0 1-10-10 V58 a6 6 0 0 1 6-6 Z" fill="none" stroke="#3B3357" stroke-width="3.2"/>
+  <path d="M50 60 h8 M50 68 h6" stroke="#D9C88A" stroke-width="2.6"/>
+  <path d="M86 40 a5 5 0 0 1 8 5 q-2 5-8 8 q-6-3-8-8 a5 5 0 0 1 8-5 Z" fill="#FF6B8A" stroke="#3B3357" stroke-width="2.4"/>
+</svg>

@@ -1,0 +1,15 @@
+<svg viewBox="0 0 120 120" stroke-linejoin="round" stroke-linecap="round" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Set the table">
+  <rect x="4" y="4" width="112" height="112" rx="28" fill="#FFDBC7"/>
+  <circle cx="60" cy="62" r="28" fill="#FFFFFF" stroke="#3B3357" stroke-width="3.2"/>
+  <circle cx="60" cy="62" r="18" fill="#EEF2F8" stroke="#C9D2E0" stroke-width="2.4"/>
+  <g stroke="#3B3357" stroke-width="3" fill="#F4A340">
+    <path d="M24 36 v14 a6 6 0 0 0 12 0 V36" fill="none"/>
+    <rect x="28.5" y="50" width="3.4" height="34" rx="1.7" stroke="none"/>
+    <rect x="24" y="34" width="3" height="16" rx="1.5" stroke="none"/>
+    <rect x="33" y="34" width="3" height="16" rx="1.5" stroke="none"/>
+  </g>
+  <g stroke="#3B3357" stroke-width="3">
+    <ellipse cx="90" cy="44" rx="7" ry="10" fill="#F4A340"/>
+    <rect x="88" y="52" width="4" height="32" rx="2" fill="#F4A340" stroke="none"/>
+  </g>
+</svg>
