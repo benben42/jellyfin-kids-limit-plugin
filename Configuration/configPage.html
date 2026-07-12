@@ -234,8 +234,10 @@
                 <div class="verticalSection">
                     <h3 class="sectionTitle">Chores</h3>
                     <div class="fieldDescription">
-                        What the kid can earn coins for. The icon (an emoji) is the whole tile on the kid
-                        page — pick something the kid recognises. Max/day limits how often a chore pays.
+                        What the kid can earn coins for. Pick a <strong>picture</strong> from the gallery —
+                        it becomes the whole tile on the kid page, clear enough for a young child who can't
+                        read the label yet. No picture chosen? The emoji is used instead. Max/day limits how
+                        often a chore pays.
                     </div>
                     <div id="choresContainer"></div>
                     <button is="emby-button" type="button" id="btnAddChore" class="raised">
@@ -282,6 +284,21 @@
         var notifyTargets = [];
 
         var NOTIFY_TYPES = ['Ntfy', 'Pushover', 'Gotify', 'Discord', 'Slack', 'Telegram', 'Apprise', 'Webhook'];
+
+        // Built-in placeholder clipart. Keys mirror Web/clipart/*.svg and ChoreClipart.Keys;
+        // served at /KidsLimit/clipart/{key}. Shown on the kid tile when a chore has no photo.
+        var CLIPART = [
+            { key: 'tidy-toys', label: 'Tidy up toys' },
+            { key: 'make-bed', label: 'Make the bed' },
+            { key: 'clothes-basket', label: 'Clothes in the basket' },
+            { key: 'set-table', label: 'Set the table' },
+            { key: 'water-plants', label: 'Water the plants' },
+            { key: 'books-shelf', label: 'Books on the shelf' },
+            { key: 'wipe-table', label: 'Wipe the table' },
+            { key: 'feed-pet', label: 'Feed the pet' },
+            { key: 'brush-teeth', label: 'Brush your teeth' },
+            { key: 'help-baby', label: 'Help baby brother' }
+        ];
 
         // Mirrors PluginConfiguration.DefaultPresets() on the server — used only by the
         // "Restore built-in presets" button to re-add missing built-ins client-side.
@@ -505,9 +522,16 @@
         function renderChores() {
             var html = '';
             chores.forEach(function (c, i) {
+                var thumb = c.Clipart
+                    ? '<img src="/KidsLimit/clipart/' + esc(c.Clipart) + '" alt="" style="width:100%;height:100%;object-fit:contain;" />'
+                    : '<span style="font-size:1.6em;opacity:.6;">🖼️</span>';
                 html += '<div class="paperList choreRow" data-idx="' + i + '" style="padding:.6em 1em;margin-bottom:.4em;' +
                     'display:flex;flex-wrap:wrap;gap:8px;align-items:center;">' +
+                    '<button is="emby-button" type="button" class="btnChoreClipart" title="Pick a picture" ' +
+                    'style="width:3.4em;height:3.4em;padding:3px;min-width:0;border-radius:10px;display:flex;' +
+                    'align-items:center;justify-content:center;">' + thumb + '</button>' +
                     '<input is="emby-input" type="text" class="choreIcon" value="' + esc(c.Icon) + '" placeholder="🛏️" ' +
+                    'title="Emoji fallback (used when no picture is chosen)" ' +
                     'style="width:4.5em;text-align:center;font-size:1.3em;" />' +
                     '<input is="emby-input" type="text" class="choreName" value="' + esc(c.Name) + '" placeholder="Chore name" ' +
                     'style="flex:1 1 10em;min-width:8em;" />' +
@@ -530,6 +554,57 @@
                     renderChores();
                 });
             });
+            container.querySelectorAll('.btnChoreClipart').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    var idx = parseInt(this.closest('[data-idx]').getAttribute('data-idx'), 10);
+                    collectChores();
+                    openClipartPicker(idx);
+                });
+            });
+        }
+
+        // Modal gallery: pick a placeholder picture for chores[idx] (or clear it).
+        function openClipartPicker(idx) {
+            var current = chores[idx] ? chores[idx].Clipart : '';
+            var back = document.createElement('div');
+            back.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;' +
+                'display:flex;align-items:center;justify-content:center;padding:1em;';
+
+            function tile(inner, label, key, sel) {
+                return '<button is="emby-button" type="button" class="clipartOpt' + (sel ? ' selected' : '') +
+                    '" data-key="' + esc(key) + '" ' +
+                    'style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px;min-width:0;' +
+                    'border-radius:12px;' + (sel ? 'outline:3px solid #00a4dc;' : '') + '">' +
+                    '<span style="width:72px;height:72px;display:flex;align-items:center;justify-content:center;">' +
+                    inner + '</span><span style="font-size:.8em;opacity:.8;">' + esc(label) + '</span></button>';
+            }
+
+            var opts = tile('<span style="font-size:2em;opacity:.6;">🚫</span>', 'No picture', '', !current);
+            CLIPART.forEach(function (cp) {
+                opts += tile('<img src="/KidsLimit/clipart/' + cp.key + '" alt="" style="width:72px;height:72px;object-fit:contain;" />',
+                    cp.label, cp.key, current === cp.key);
+            });
+
+            back.innerHTML = '<div style="background:var(--theme-body-bg,#101010);border-radius:14px;max-width:640px;' +
+                'width:100%;max-height:88vh;overflow:auto;padding:1.2em;box-shadow:0 12px 40px rgba(0,0,0,.5);">' +
+                '<h3 style="margin:0 0 .2em;">Pick a picture</h3>' +
+                '<div class="fieldDescription" style="margin-bottom:1em;">Shown on the kid tile until a photo is added.</div>' +
+                '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;">' +
+                opts + '</div>' +
+                '<div style="text-align:right;margin-top:1em;"><button is="emby-button" type="button" class="raised btnClipartCancel">' +
+                '<span>Close</span></button></div></div>';
+
+            function close() { if (back.parentNode) { back.parentNode.removeChild(back); } }
+            back.addEventListener('click', function (e) { if (e.target === back) { close(); } });
+            back.querySelector('.btnClipartCancel').addEventListener('click', close);
+            back.querySelectorAll('.clipartOpt').forEach(function (opt) {
+                opt.addEventListener('click', function () {
+                    if (chores[idx]) { chores[idx].Clipart = this.getAttribute('data-key') || ''; }
+                    close();
+                    renderChores();
+                });
+            });
+            document.body.appendChild(back);
         }
 
         function collectChores() {
@@ -818,7 +893,7 @@
 
             page.querySelector('#btnAddChore').addEventListener('click', function () {
                 collectChores();
-                chores.push({ Id: '', Name: '', Icon: '', Coins: 1, MaxPerDay: 1, Enabled: true });
+                chores.push({ Id: '', Name: '', Icon: '', Clipart: '', Coins: 1, MaxPerDay: 1, Enabled: true });
                 renderChores();
             });
 

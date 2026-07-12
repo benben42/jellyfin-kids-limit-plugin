@@ -1,0 +1,10 @@
+<svg viewBox="0 0 120 120" stroke-linejoin="round" stroke-linecap="round" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Tidy up toys">
+  <rect x="4" y="4" width="112" height="112" rx="28" fill="#FFE7BE"/>
+  <circle cx="45" cy="46" r="14" fill="#3FC7B4" stroke="#3B3357" stroke-width="3.2"/>
+  <circle cx="40" cy="41" r="3.4" fill="#FFFFFF"/>
+  <rect x="58" y="30" width="22" height="22" rx="4" fill="#FF6B8A" stroke="#3B3357" stroke-width="3.2"/>
+  <rect x="80" y="40" width="16" height="16" rx="4" fill="#FFC93C" stroke="#3B3357" stroke-width="3.2"/>
+  <rect x="30" y="56" width="60" height="14" rx="6" fill="#F0AC6B" stroke="#3B3357" stroke-width="3.2"/>
+  <rect x="36" y="70" width="48" height="30" rx="8" fill="#E0965A" stroke="#3B3357" stroke-width="3.2"/>
+  <rect x="36" y="70" width="48" height="8" fill="#C97C4A"/>
+</svg>

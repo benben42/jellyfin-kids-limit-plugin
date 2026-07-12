@@ -14,6 +14,13 @@ public class Chore
     /// <summary>Gets or sets the emoji shown on the kid's tile, e.g. "🛏️".</summary>
     public string Icon { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Gets or sets the placeholder clipart key shown on the kid's tile when the chore has
+    /// no photo yet, e.g. "make-bed". Empty falls back to <see cref="Icon"/>. The key must be
+    /// one of the built-in clipart served by <c>GET /KidsLimit/clipart/{key}</c>.
+    /// </summary>
+    public string Clipart { get; set; } = string.Empty;
+
     /// <summary>Gets or sets how many coins the chore pays.</summary>
     public int Coins { get; set; } = 1;
 

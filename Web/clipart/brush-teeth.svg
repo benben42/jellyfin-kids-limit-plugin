@@ -1,0 +1,13 @@
+<svg viewBox="0 0 120 120" stroke-linejoin="round" stroke-linecap="round" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Brush your teeth">
+  <rect x="4" y="4" width="112" height="112" rx="28" fill="#D7F4EC"/>
+  <g transform="rotate(-28 60 62)">
+    <rect x="30" y="66" width="46" height="12" rx="6" fill="#56A8E8" stroke="#3B3357" stroke-width="3.2"/>
+    <rect x="72" y="60" width="16" height="24" rx="5" fill="#3E93D6" stroke="#3B3357" stroke-width="3.2"/>
+    <path d="M74 58 v-8 M79 58 v-9 M84 58 v-8" stroke="#FFFFFF" stroke-width="3.4"/>
+    <path d="M73 50 q8-6 16 0 q-4 5-16 0 Z" fill="#FF6B8A" stroke="#3B3357" stroke-width="2.6"/>
+  </g>
+  <g fill="#FFC93C" stroke="#3B3357" stroke-width="2">
+    <path d="M40 34 l3 7 7 3 -7 3 -3 7 -3-7 -7-3 7-3 Z"/>
+  </g>
+  <circle cx="82" cy="42" r="3.2" fill="#FFFFFF" stroke="#3B3357" stroke-width="1.8"/>
+</svg>

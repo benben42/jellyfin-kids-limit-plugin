@@ -1,0 +1,17 @@
+<svg viewBox="0 0 120 120" stroke-linejoin="round" stroke-linecap="round" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Water the plants">
+  <rect x="4" y="4" width="112" height="112" rx="28" fill="#CFF2E1"/>
+  <path d="M70 58 q-14-4-14-18 q14 0 14 14 Z" fill="#7BC96F" stroke="#3B3357" stroke-width="3"/>
+  <path d="M70 60 q14-4 14-18 q-14 0-14 14 Z" fill="#6FBF73" stroke="#3B3357" stroke-width="3"/>
+  <rect x="66" y="52" width="4" height="22" rx="2" fill="#5AA05E"/>
+  <path d="M56 76 h32 l-5 24 h-22 Z" fill="#E38A5A" stroke="#3B3357" stroke-width="3.2"/>
+  <rect x="52" y="72" width="40" height="8" rx="4" fill="#C9744A" stroke="#3B3357" stroke-width="3.2"/>
+  <g stroke="#3B3357" stroke-width="3.2">
+    <rect x="14" y="40" width="26" height="18" rx="8" fill="#56A8E8"/>
+    <path d="M40 44 l12 -6 -2 8 Z" fill="#56A8E8"/>
+    <path d="M18 40 q3-9 12-9" fill="none"/>
+  </g>
+  <g fill="#7ECDF0" stroke="#3B3357" stroke-width="2">
+    <path d="M50 46 q-2 5 0 7 q2-2 0-7 Z"/>
+    <path d="M56 52 q-2 5 0 7 q2-2 0-7 Z"/>
+  </g>
+</svg>
