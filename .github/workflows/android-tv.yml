@@ -1,0 +1,59 @@
+name: Build Android TV App
+
+# Builds the "My Coins" Android TV wrapper APK. The APK is a thin WebView shell
+# around the plugin-served kid page, so it's built once and sideloaded onto the TV;
+# every future UI change ships with the plugin, not the APK.
+#
+# Grab the APK from the run's "Artifacts" section (Actions tab → this run), or
+# trigger it manually (Run workflow) and optionally bake in the kid page URL so
+# the TV never has to prompt for it.
+on:
+  push:
+    branches: [ main, 'claude/**' ]
+    paths:
+      - 'android-tv/**'
+      - '.github/workflows/android-tv.yml'
+  pull_request:
+    paths:
+      - 'android-tv/**'
+      - '.github/workflows/android-tv.yml'
+  workflow_dispatch:
+    inputs:
+      kid_page_url:
+        description: 'Kid page URL to bake into the APK (optional). Leave empty to enter it on the TV on first launch.'
+        required: false
+        default: ''
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android-tv
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      # Debug build type: signed with the standard Android debug key, so the APK
+      # installs straight away via adb / "Send files to TV". (A release build would
+      # be unsigned and refuse to install without a keystore.)
+      - name: Build APK
+        run: gradle assembleDebug -PKID_PAGE_URL="${{ github.event.inputs.kid_page_url }}"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: my-coins-tv-apk
+          path: android-tv/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
