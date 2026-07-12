@@ -244,8 +244,8 @@
         html += '<div class="btns" style="margin-top:.45em;">';
         meta.Chores.forEach(function (c) {
             html += '<button type="button" class="btnEarn" data-userid="' + esc(userId) +
-                '" data-chore="' + esc(c.Id) + '" title="' + esc(c.Name) + '">+' +
-                esc(c.Icon || '⭐') + coin() + c.Coins + '</button>';
+                '" data-chore="' + esc(c.Id) + '" title="' + esc(c.Name) + '">+ ' +
+                esc(c.Icon || '⭐') + ' ' + esc(c.Name) + ' ' + coin() + c.Coins + '</button>';
         });
         html += '<button type="button" class="btnRedeemCoins" data-userid="' + esc(userId) + '">Spend coins…</button>' +
             '<button type="button" class="btnAdjustCoins" data-userid="' + esc(userId) + '">± adjust</button></div>';

@@ -20,11 +20,12 @@
         --good: #58e08b;
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
     html, body { height: 100%; }
     body {
         color: #fff; overflow-x: hidden;
         font-family: "Baloo 2", "Segoe UI Rounded", -apple-system, Roboto, "Segoe UI", sans-serif;
-        padding: 2.2vh 3.2vw 5vh;
+        padding: 2.2vh 3.2vw 6vh;
         background:
             radial-gradient(80vw 60vh at 12% -8%, rgba(120, 90, 255, .35), transparent 60%),
             radial-gradient(70vw 55vh at 105% 10%, rgba(255, 120, 200, .28), transparent 55%),
@@ -32,41 +33,51 @@
         background-attachment: fixed;
     }
 
-    /* -------- header: name + coin jar -------- */
+    /* -------- header: name + today's allowance + coin jar -------- */
     .header {
         display: flex; align-items: center; justify-content: space-between;
-        margin-bottom: 2vh; min-height: 12vh; gap: 2vw;
+        margin-bottom: 1.2vh; min-height: 11vh; gap: 2vw;
     }
     #kidName {
-        font-size: 5.4vh; font-weight: 800; letter-spacing: .2vh;
-        display: flex; align-items: center; gap: 1.5vh;
+        font-size: 5.2vh; font-weight: 800; letter-spacing: .2vh;
+        display: flex; align-items: center; gap: 1.5vh; min-width: 0;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     #kidName .wave { display: inline-block; animation: wave 2.2s ease-in-out infinite; transform-origin: 70% 70%; }
     @keyframes wave { 0%,60%,100% { transform: rotate(0); } 15% { transform: rotate(16deg); } 30% { transform: rotate(-8deg); } 45% { transform: rotate(12deg); } }
 
-    #jar {
-        display: flex; align-items: center; gap: 1.4vh;
+    .wallet { display: flex; align-items: stretch; gap: 1.6vh; flex: 0 0 auto; }
+    .chipBox {
+        display: flex; align-items: center; gap: 1.2vh;
         background: linear-gradient(150deg, #2a2350, #1c1740);
-        border: .5vh solid rgba(255, 210, 74, .5);
-        border-radius: 4vh; padding: 1.3vh 3vh;
-        box-shadow: 0 1.5vh 4vh rgba(0, 0, 0, .35), inset 0 0 3vh rgba(255, 210, 74, .1);
+        border-radius: 4vh; padding: 1.1vh 2.6vh;
+        box-shadow: 0 1.5vh 4vh rgba(0, 0, 0, .35);
     }
-    #jarCoins { font-size: 4.2vh; letter-spacing: -.6vh; filter: drop-shadow(0 .4vh .3vh rgba(0,0,0,.4)); }
-    #jarCount { font-size: 5.2vh; font-weight: 900; color: var(--accent); min-width: 2ch; text-align: center; }
+    #jar { border: .5vh solid rgba(255, 210, 74, .5); box-shadow: 0 1.5vh 4vh rgba(0,0,0,.35), inset 0 0 3vh rgba(255, 210, 74, .1); }
+    #jarCoins { font-size: 3.8vh; letter-spacing: -.6vh; filter: drop-shadow(0 .4vh .3vh rgba(0,0,0,.4)); }
+    #jarCount { font-size: 4.8vh; font-weight: 900; color: var(--accent); min-width: 2ch; text-align: center; }
     #jar.bump { animation: bump .4s ease; }
     @keyframes bump { 0%{ transform: scale(1);} 40%{ transform: scale(1.14);} 100%{ transform: scale(1);} }
 
+    /* today's spend allowance: bright coins = still spendable today, dim = already spent */
+    #today { border: .5vh solid rgba(255, 255, 255, .18); }
+    #today .sun { font-size: 3.4vh; }
+    #today .todayCoins { font-size: 3vh; letter-spacing: -.4vh; }
+    #today .coin.spent { filter: grayscale(1) opacity(.3); }
+    #todayCount { font-size: 4vh; font-weight: 900; color: var(--good); min-width: 1.4ch; text-align: center; }
+    #today.empty #todayCount { color: rgba(255,255,255,.45); }
+
     /* -------- section rows -------- */
-    .section { margin-top: 2.5vh; }
+    .section { margin-top: 3.2vh; }
     .section.hidden { display: none; }
     .rowTitle {
-        font-size: 4vh; margin: 1vh 0 1.4vh; display: flex; align-items: center; gap: 1.2vh;
+        font-size: 3.6vh; margin: 0 0 1.8vh; display: flex; align-items: center; gap: 1.4vh;
     }
     .rowTitle .pill {
-        font-size: 2.1vh; font-weight: 800; opacity: .8; background: rgba(255,255,255,.1);
-        padding: .5vh 1.6vh; border-radius: 3vh;
+        font-size: 2.1vh; font-weight: 800; opacity: .85; background: rgba(255,255,255,.1);
+        padding: .6vh 1.8vh; border-radius: 3vh; letter-spacing: .05vh;
     }
-    .grid { display: flex; flex-wrap: wrap; gap: 2.4vh; }
+    .grid { display: flex; flex-wrap: wrap; gap: 2.6vh; align-items: flex-start; }
 
     .tile {
         position: relative; outline: none; cursor: pointer;
@@ -86,6 +97,8 @@
     /* Locked-because-daily-allowance-is-spent reads differently from locked-because-broke:
        the moon says "come back tomorrow", the padlock says "you need more coins". */
     .tile.disabled.lockMoon::after { content: "🌙"; }
+    /* A pending/done chore already explains itself with its ⏳/✅ overlay — no padlock. */
+    .chore.disabled::after { content: none; }
 
     /* Gold coin with a star — the plugin's coin icon. Sized by font-size (1em square). */
     .coin {
@@ -94,19 +107,22 @@
         filter: drop-shadow(0 .06em .05em rgba(0,0,0,.35));
     }
 
-    /* chores */
-    .chore {
+    /* square tiles (chores + extra time) share one size so the rows line up */
+    .chore, .timeTile {
         width: 21vh; height: 21vh; background: linear-gradient(150deg, var(--card2), var(--card));
-        box-shadow: 0 1.2vh 3vh rgba(0,0,0,.3);
+        box-shadow: 0 1.2vh 3vh rgba(0,0,0,.3); gap: .6vh;
     }
-    .chore .icon { font-size: 9.5vh; line-height: 1.1; }
-    .chore .name { font-size: 2vh; opacity: .7; max-width: 90%; text-align: center;
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .chore .icon { font-size: 9vh; line-height: 1.1; }
+    .chore .name, .title .name {
+        font-size: 2.1vh; opacity: .75; max-width: 92%; text-align: center;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
     .badge {
-        position: absolute; top: -1.4vh; right: -1.4vh;
+        position: absolute; top: -1.2vh; right: -1.2vh;
         background: linear-gradient(150deg, #ffe38a, var(--accent)); color: var(--accent-ink);
         border-radius: 3vh; font-size: 2.6vh; font-weight: 900; padding: .5vh 1.5vh;
-        box-shadow: 0 .8vh 2vh rgba(0,0,0,.35); display: flex; align-items: center; gap: .3vh;
+        box-shadow: 0 .8vh 2vh rgba(0,0,0,.35); display: flex; align-items: center; gap: .4vh;
+        line-height: 1.25;
     }
     .stateBadge {
         position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
@@ -114,18 +130,14 @@
     }
 
     /* extra-time tiles: coins → plain minutes, to finish whatever is playing */
-    .timeTile {
-        width: 21vh; height: 21vh; background: linear-gradient(150deg, var(--card2), var(--card));
-        box-shadow: 0 1.2vh 3vh rgba(0,0,0,.3);
-    }
     .timeTile .icon { font-size: 8.5vh; line-height: 1.1; }
-    .timeTile .name { font-size: 3vh; font-weight: 800; color: var(--good); }
+    .timeTile .name { font-size: 3vh; font-weight: 800; color: var(--good); opacity: 1; }
 
-    /* titles (library posters) */
-    .title { width: 22vh; }
-    .title .posterWrap { position: relative; width: 22vh; }
+    /* titles (library posters) — same 21vh column width as the square tiles */
+    .title { width: 21vh; }
+    .title .posterWrap { position: relative; width: 21vh; }
     .title .poster {
-        width: 22vh; height: 32vh; object-fit: cover; border-radius: 2.4vh;
+        width: 21vh; height: 31.5vh; object-fit: cover; border-radius: 2.4vh;
         background: linear-gradient(150deg, var(--card2), var(--card));
         display: block; box-shadow: 0 1.4vh 3.5vh rgba(0,0,0,.4);
     }
@@ -139,14 +151,10 @@
         display: block; height: 100%; border-radius: 1vh;
         background: linear-gradient(90deg, #6ff0a3, #35c46f);
     }
-    .title .name {
-        font-size: 2vh; opacity: .8; padding: .9vh .6vh 0; max-width: 100%; text-align: center;
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
-    .title .badge { top: -1vh; right: -1vh; }
+    .title .name { padding-top: .9vh; }
 
     #more { display: flex; align-items: center; justify-content: center;
-        width: 22vh; height: 32vh; font-size: 6vh; opacity: .5; }
+        width: 21vh; height: 31.5vh; font-size: 6vh; opacity: .5; }
     #more.spin { animation: spin 1s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -184,7 +192,10 @@
 <body>
     <div class="header">
         <div id="kidName"></div>
-        <div id="jar"><span id="jarCoins"></span><span id="jarCount"></span></div>
+        <div class="wallet">
+            <div id="today" class="chipBox"></div>
+            <div id="jar" class="chipBox"><span id="jarCoins"></span><span id="jarCount"></span></div>
+        </div>
     </div>
 
     <div id="choreSection" class="section hidden">
@@ -279,6 +290,26 @@
         else { flashOverlay(coin() + '🔒', '🧹✨ ➜ ' + coin(), 1600); }
     }
 
+    // "How much can I still spend today?" — bright coins are spendable now, dim ones
+    // already spent; the number is what's actually redeemable (balance-bounded).
+    function renderToday() {
+        var el = document.getElementById('today');
+        var cap = state.MaxRedeemCoinsPerDay || 0;
+        if (cap <= 0) { el.style.display = 'none'; return; }
+        el.style.display = '';
+
+        var left = redeemable();
+        var spent = Math.min(cap, state.CoinsRedeemedToday || 0);
+        var bright = Math.min(left, 6);
+        var dim = Math.min(spent, Math.max(0, 6 - bright));
+        var html = '<span class="sun">' + (left > 0 ? '☀️' : '🌙') + '</span><span class="todayCoins">';
+        for (var i = 0; i < bright; i++) { html += coin(); }
+        for (var j = 0; j < dim; j++) { html += '<span class="coin spent"></span>'; }
+        html += '</span><span id="todayCount">' + left + '</span>';
+        el.classList.toggle('empty', left <= 0);
+        el.innerHTML = html;
+    }
+
     function renderJar() {
         document.getElementById('jarCoins').innerHTML = coinRow(state.CoinBalance);
         document.getElementById('jarCount').textContent = state.CoinBalance;
@@ -289,10 +320,18 @@
         lastCoins = state.CoinBalance;
     }
 
+    var lastChoresSig = '';
+
     function renderChores() {
         var section = document.getElementById('choreSection');
         var chores = state.Chores || [];
         section.classList.toggle('hidden', chores.length === 0);
+
+        // Rebuild only when something actually changed — the poll runs every few
+        // seconds and a needless rebuild would restart animations / jiggle focus.
+        var sig = JSON.stringify(chores);
+        if (sig === lastChoresSig) { return; }
+        lastChoresSig = sig;
 
         // Preserve D-pad focus if it was on a chore we're about to rebuild.
         var focusId = null;
@@ -393,11 +432,14 @@
 
     // --------------------------------------------------------------- loading
     function loadState(initial) {
-        api('state').then(function (s) {
+        // Polls skip the library page (light=1) so they can run every few seconds —
+        // a parent's approve/reject or coin grant shows up almost immediately.
+        api(initial ? 'state' : 'state?light=1').then(function (s) {
             state = s;
             document.getElementById('kidName').innerHTML =
                 '<span class="wave">👋</span>' + esc(s.Name);
             renderJar();
+            renderToday();
             renderChores();
             if (initial) {
                 titles = s.Titles || [];
@@ -645,7 +687,10 @@
     });
 
     loadState(true);
-    setInterval(function () { loadState(false); }, 20000);
+    setInterval(function () { loadState(false); }, 5000);
+    document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) { loadState(false); }
+    });
 })();
 </script>
 </body>

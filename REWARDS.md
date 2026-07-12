@@ -66,7 +66,14 @@ remote (D-pad). Everything is pictures, emoji, counts and sounds.
      coins, grants the bonus time and (best effort) starts playback of that item
      on the kid's active Jellyfin session (`SendPlayCommand`). If no session is
      active the page shows "open Jellyfin" guidance (pictogram).
-   - Coin jar header: coins drawn as countable 🪙 icons.
+   - Coin jar header: coins drawn as countable star-coin icons, plus a "today"
+     chip showing the day's spend allowance (bright coins = still spendable now,
+     dim = already spent; ☀️ flips to 🌙 when the allowance is gone).
+   - The watch grid is sorted by most-recently-watched first (the movie to
+     finish sits up front), then alphabetically.
+   - The page polls a lightweight state endpoint (`kid/state?light=1`, no
+     library page) every few seconds, so parent approvals/rejections/coin
+     grants show up without a manual refresh.
    - D-pad spatial navigation (arrow keys in WebView), huge focus ring, WebAudio
      sound feedback. No reading required.
 2. **Parent dashboard** (existing admin page) — per-kid wallet: balance, pending

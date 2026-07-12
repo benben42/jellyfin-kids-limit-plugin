@@ -226,7 +226,8 @@
                 if (c.Enabled === false) { return; }
                 html += '<button is="emby-button" type="button" class="raised btnEarn" data-userid="' + esc(userId) +
                     '" data-chore="' + esc(c.Id) + '" title="' + esc(c.Name) + '">' +
-                    '<span>+' + esc(c.Icon || '⭐') + '<span class="coin"></span>' + c.Coins + '</span></button>';
+                    '<span>+ ' + esc(c.Icon || '⭐') + ' ' + esc(c.Name) +
+                    ' <span class="coin"></span>' + c.Coins + '</span></button>';
             });
             html += '<span class="sep"></span>' +
                 '<button is="emby-button" type="button" class="raised btnRedeemCoins" data-userid="' + esc(userId) +

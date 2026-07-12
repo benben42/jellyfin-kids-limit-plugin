@@ -479,11 +479,15 @@ public class RewardsController : ControllerBase
     }
 
     /// <summary>Gets everything the kid page renders: coins, chores, reference titles, time.</summary>
+    /// <param name="light">
+    /// True skips the (comparatively expensive) library page so the kid page can poll
+    /// coins/chores frequently — a parent's approve/reject then shows up within seconds.
+    /// </param>
     /// <param name="token">The per-user kid token.</param>
     /// <returns>The kid page state.</returns>
     [HttpGet("kid/state")]
     [Produces("application/json")]
-    public ActionResult<object> KidState([FromQuery] string? token = null)
+    public ActionResult<object> KidState([FromQuery] bool light = false, [FromQuery] string? token = null)
     {
         var kid = ResolveKid(token);
         if (kid is null)
@@ -518,7 +522,9 @@ public class RewardsController : ControllerBase
         // Watch options are the kid's OWN accessible library as posters (respecting their
         // Jellyfin library access + parental rating), so it never looks like "only these
         // few shows". The first page ships with the state; more pages come from kid/library.
-        var (titles, titlesTotal) = LibraryPage(kid.Value.Guid, config, 0, LibraryPageSize);
+        var (titles, titlesTotal) = light
+            ? (new List<object>(), 0)
+            : LibraryPage(kid.Value.Guid, config, 0, LibraryPageSize);
 
         return new
         {
@@ -751,9 +757,15 @@ public class RewardsController : ControllerBase
             Recursive = true,
             IsVirtualItem = false,
             ImageTypes = new[] { ImageType.Primary }, // only items with a poster to tap
-            // SortOrder moved to Jellyfin.Database.Implementations in 10.11 (same relocation
-            // noted for the User entity); fully-qualify so we don't add a brittle using.
-            OrderBy = new[] { (ItemSortBy.SortName, Jellyfin.Database.Implementations.Enums.SortOrder.Ascending) },
+            // What she watched last comes first (so the movie she wants to FINISH is right
+            // there), then the rest alphabetically. SortOrder moved to
+            // Jellyfin.Database.Implementations in 10.11 (same relocation noted for the
+            // User entity); fully-qualify so we don't add a brittle using.
+            OrderBy = new[]
+            {
+                (ItemSortBy.DatePlayed, Jellyfin.Database.Implementations.Enums.SortOrder.Descending),
+                (ItemSortBy.SortName, Jellyfin.Database.Implementations.Enums.SortOrder.Ascending),
+            },
             StartIndex = Math.Max(0, skip),
             Limit = Math.Clamp(take, 1, 200),
         };
