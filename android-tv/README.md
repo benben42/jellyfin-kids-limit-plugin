@@ -7,6 +7,21 @@ future improvement ships with the plugin, not the APK.
 
 ## Build
 
+### Easiest: GitHub Actions (no local toolchain)
+
+The **Build Android TV App** workflow (`.github/workflows/android-tv.yml`) builds
+the APK for you:
+
+1. GitHub → **Actions** → *Build Android TV App* → **Run workflow**.
+2. Optionally paste the kid page URL to bake it into the APK (see step 2 below);
+   leave it empty to type the URL on the TV on first launch instead.
+3. When the run finishes, download the **`my-coins-tv-apk`** artifact and unzip
+   it to get `app-debug.apk`.
+
+It also builds automatically on any push that touches `android-tv/`.
+
+### Local: Android Studio
+
 1. Open this `android-tv/` folder in Android Studio (it will generate the
    Gradle wrapper on first sync).
 2. In the plugin settings (*Per-user limits* → your kid → *Kid page*), generate
@@ -22,7 +37,7 @@ Enable Developer options on the TV (Settings → Device → About → click *Bui
 
 ```
 adb connect <tv-ip>
-adb install app/build/outputs/apk/release/app-release.apk   # or the debug APK
+adb install app-debug.apk   # the artifact from CI, or app/build/outputs/apk/debug/app-debug.apk from a local build
 ```
 
 (Any sideloading app — e.g. "Send files to TV" — works too.)
