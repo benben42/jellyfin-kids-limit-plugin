@@ -66,11 +66,21 @@ remote (D-pad). Everything is pictures, emoji, counts and sounds.
      coins, grants the bonus time and (best effort) starts playback of that item
      on the kid's active Jellyfin session (`SendPlayCommand`). If no session is
      active the page shows "open Jellyfin" guidance (pictogram).
-   - Coin jar header: coins drawn as countable star-coin icons, plus a "today"
-     chip showing the day's spend allowance (bright coins = still spendable now,
-     dim = already spent; ☀️ flips to 🌙 when the allowance is gone).
-   - The watch grid is sorted by most-recently-watched first (the movie to
-     finish sits up front), then alphabetically.
+   - Header: the kid's Jellyfin profile photo (👋 wave when there is none) and
+     her three balances, each drawn as a different thing so they can't be
+     confused. **TV-time meter** (📺 + draining battery bar + minutes): her
+     plain daily minutes from the preset — deliberately NOT coins, since this
+     time drains on its own and can't be banked; amber when low, grey + 🌙 when
+     the day is used up, hidden when no limit applies. **Piggy capsule** (🐷):
+     saved chore coins, drawn as countable star-coins up to four, then a
+     coin-pile icon plus the count. Inside the same capsule, the **☀️ count**
+     is how many piggy coins may still come out today (the daily redeem cap) —
+     a gate on the bank, not a third currency; ☀️ flips to 🌙 when spent. The
+     header is sticky: a D-pad has no "jump to top", so the balances stay
+     visible however deep the child scrolls into the grid.
+   - The watch grid is sorted by most-recently-watched first, movies and series
+     mixed by real recency (a series' recency comes from its episodes' play
+     dates), then alphabetically.
    - The page polls a lightweight state endpoint (`kid/state?light=1`, no
      library page) every few seconds, so parent approvals/rejections/coin
      grants show up without a manual refresh.
