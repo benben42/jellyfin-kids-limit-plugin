@@ -80,19 +80,38 @@
         border-radius: 4vh; padding: 1.1vh 2.6vh;
         box-shadow: 0 1.5vh 4vh rgba(0, 0, 0, .35);
     }
+    /* Piggy-bank capsule: saved gold coins + how many may come out today. The ☀️ count is
+       the piggy's daily "door", not a third currency, so it lives INSIDE the same capsule. */
     #jar { border: .5vh solid rgba(255, 210, 74, .5); box-shadow: 0 1.5vh 4vh rgba(0,0,0,.35), inset 0 0 3vh rgba(255, 210, 74, .1); }
+    #jar .pig { font-size: 3.8vh; filter: drop-shadow(0 .4vh .3vh rgba(0,0,0,.4)); }
     #jarCoins { font-size: 3.8vh; letter-spacing: -.6vh; filter: drop-shadow(0 .4vh .3vh rgba(0,0,0,.4)); }
     #jarCount { font-size: 4.8vh; font-weight: 900; color: var(--accent); min-width: 2ch; text-align: center; }
     #jar.bump { animation: bump .4s ease; }
     @keyframes bump { 0%{ transform: scale(1);} 40%{ transform: scale(1.14);} 100%{ transform: scale(1);} }
-
-    /* today's spend allowance: bright coins = still spendable today, dim = already spent */
-    #today { border: .5vh solid rgba(255, 255, 255, .18); }
-    #today .sun { font-size: 3.4vh; }
-    #today .todayCoins { font-size: 3vh; letter-spacing: -.4vh; }
-    #today .coin.spent { filter: grayscale(1) opacity(.3); }
+    #todayWrap { display: flex; align-items: center; gap: 1.2vh; }
+    #jar .divider { width: .4vh; align-self: stretch; margin: .5vh .4vh; border-radius: 1vh; background: rgba(255, 255, 255, .18); }
+    #todaySun { font-size: 3.2vh; }
     #todayCount { font-size: 4vh; font-weight: 900; color: var(--good); min-width: 1.4ch; text-align: center; }
-    #today.empty #todayCount { color: rgba(255,255,255,.45); }
+    #jar.todayEmpty #todayCount { color: rgba(255,255,255,.45); }
+
+    /* TV-time meter: her plain daily minutes. Deliberately NOT coins — this time drains on
+       its own and can't be banked or spent on posters, so it reads as a battery, not money. */
+    #tvTime { border: .5vh solid rgba(255, 255, 255, .18); }
+    #tvTime .tv { font-size: 3.4vh; }
+    #tvTime .meter {
+        width: 16vh; height: 2.8vh; border-radius: 2vh; overflow: hidden;
+        background: rgba(0, 0, 0, .45); box-shadow: inset 0 0 1vh rgba(0, 0, 0, .5);
+    }
+    #tvTime .meter > span {
+        display: block; height: 100%; border-radius: 2vh;
+        background: linear-gradient(90deg, #6ff0a3, #35c46f);
+        transition: width .6s ease;
+    }
+    #tvTime.low .meter > span { background: linear-gradient(90deg, #ffe38a, #f0a83a); }
+    #tvTime.empty .meter > span { background: rgba(255, 255, 255, .25); }
+    #tvMins { font-size: 3.6vh; font-weight: 900; color: var(--good); min-width: 2ch; text-align: center; }
+    #tvTime.low #tvMins { color: var(--accent); }
+    #tvTime.empty #tvMins { color: rgba(255,255,255,.45); }
 
     /* -------- section rows -------- */
     .section { margin-top: 3.2vh; }
@@ -251,11 +270,14 @@
         #kidName .avatar { width: clamp(30px, 9vw, 52px); height: clamp(30px, 9vw, 52px); }
         .wallet { gap: 2.5vw; }
         .chipBox { border-radius: 999px; padding: 1.2vh 3vw; gap: 2vw; }
+        #jar .pig { font-size: clamp(18px, 5vw, 34px); }
         #jarCoins { font-size: clamp(18px, 5vw, 34px); letter-spacing: -.3vw; }
         #jarCount { font-size: clamp(22px, 6.5vw, 44px); }
-        #today .sun { font-size: clamp(16px, 4.5vw, 30px); }
-        #today .todayCoins { font-size: clamp(15px, 4vw, 26px); letter-spacing: -.2vw; }
+        #todaySun { font-size: clamp(15px, 4.2vw, 28px); }
         #todayCount { font-size: clamp(18px, 5.5vw, 36px); }
+        #tvTime .tv { font-size: clamp(16px, 4.5vw, 30px); }
+        #tvTime .meter { width: clamp(64px, 19vw, 130px); height: clamp(12px, 3.4vw, 24px); }
+        #tvMins { font-size: clamp(17px, 5vw, 32px); }
 
         .section { margin-top: clamp(16px, 4vw, 30px); }
         .rowTitle { font-size: clamp(18px, 5.5vw, 32px); margin-bottom: 2vh; gap: 2vw; }
@@ -303,8 +325,15 @@
     <div class="header">
         <div id="kidName"></div>
         <div class="wallet">
-            <div id="today" class="chipBox"></div>
-            <div id="jar" class="chipBox"><span id="jarCoins"></span><span id="jarCount"></span></div>
+            <div id="tvTime" class="chipBox">
+                <span class="tv">📺</span>
+                <div class="meter"><span id="meterFill"></span></div>
+                <span id="tvMins"></span>
+            </div>
+            <div id="jar" class="chipBox">
+                <span class="pig">🐷</span><span id="jarCoins"></span><span id="jarCount"></span>
+                <span id="todayWrap"><span class="divider"></span><span id="todaySun"></span><span id="todayCount"></span></span>
+            </div>
         </div>
     </div>
 
@@ -427,27 +456,37 @@
         else { flashOverlay(coin() + '🔒', '🧹✨ ➜ ' + coin(), 1600); }
     }
 
-    // "How much can I still spend today?" — bright coins are spendable now, dim ones
-    // already spent; the number is what's actually redeemable (balance-bounded).
+    // "How many piggy coins may still come out today?" — the ☀️ segment inside the piggy
+    // capsule. It's a gate on the bank, not money of its own, so it's a sun + number, not
+    // a second row of coins. 🌙 = the allowance is spent, come back tomorrow.
     function renderToday() {
-        var el = document.getElementById('today');
+        var wrap = document.getElementById('todayWrap');
         var cap = state.MaxRedeemCoinsPerDay || 0;
-        if (cap <= 0) { el.style.display = 'none'; return; }
-        el.style.display = '';
+        if (cap <= 0) { wrap.style.display = 'none'; return; }
+        wrap.style.display = '';
 
         var left = redeemable();
-        var spent = Math.min(cap, state.CoinsRedeemedToday || 0);
-        var html = '<span class="sun">' + (left > 0 ? '☀️' : '🌙') + '</span><span class="todayCoins">';
-        if (left > 4) {
-            html += '<span class="coinPile"></span>';
-        } else {
-            for (var i = 0; i < left; i++) { html += coin(); }
-            var dim = Math.min(spent, Math.max(0, 4 - left));
-            for (var j = 0; j < dim; j++) { html += '<span class="coin spent"></span>'; }
-        }
-        html += '</span><span id="todayCount">' + left + '</span>';
-        el.classList.toggle('empty', left <= 0);
-        el.innerHTML = html;
+        document.getElementById('todaySun').textContent = left > 0 ? '☀️' : '🌙';
+        document.getElementById('todayCount').textContent = left;
+        document.getElementById('jar').classList.toggle('todayEmpty', left <= 0);
+    }
+
+    // The TV-time meter: her plain daily minutes, drawn as a draining battery instead of
+    // coins (this time can't be banked or spent — it just runs out and refills tomorrow).
+    // Hidden entirely when no limit applies (unlimited day / no preset).
+    function renderTime() {
+        var el = document.getElementById('tvTime');
+        var remaining = state.TimeRemainingSeconds;
+        if (remaining === null || remaining === undefined) { el.style.display = 'none'; return; }
+        el.style.display = '';
+
+        var budget = state.TimeBudgetSeconds || remaining || 1;
+        var pct = budget > 0 ? Math.min(100, remaining * 100 / budget) : 0;
+        document.getElementById('meterFill').style.width = pct + '%';
+        document.getElementById('tvMins').textContent = Math.ceil(remaining / 60);
+        el.classList.toggle('low', remaining > 0 && pct <= 30);
+        el.classList.toggle('empty', remaining <= 0);
+        el.querySelector('.tv').textContent = remaining > 0 ? '📺' : '🌙';
     }
 
     function renderJar() {
@@ -588,6 +627,7 @@
             renderName(s.Name);
             renderJar();
             renderToday();
+            renderTime();
             renderChores();
             if (initial) {
                 titles = s.Titles || [];

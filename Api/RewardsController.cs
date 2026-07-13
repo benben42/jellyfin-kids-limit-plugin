@@ -502,7 +502,8 @@ public class RewardsController : ControllerBase
 
         var config = Config;
         var userId = IdN(kid.Value.Guid);
-        var today = LimitCalculator.DateKey(DateTime.Now);
+        var local = DateTime.Now;
+        var today = LimitCalculator.DateKey(local);
         var wallet = _wallets.GetSnapshot(userId);
         var redeemedToday = string.Equals(wallet.RedeemDate, today, StringComparison.Ordinal)
             ? wallet.CoinsRedeemedToday
@@ -525,6 +526,42 @@ public class RewardsController : ControllerBase
                 string.Equals(p.Date, today, StringComparison.Ordinal)),
         }).ToList();
 
+        // The header's TV-time meter: her plain daily minutes, which are a different thing
+        // from coins (they drain on their own and can't be banked). Remaining = the same
+        // most-restrictive-cap math the tracker enforces; the budget is the meter's full
+        // scale, taken from whichever cap family is configured.
+        long? timeRemaining = null;
+        long? timeBudget = null;
+        var userCfg = Plugin.Instance?.FindUser(userId);
+        var preset = userCfg is null || !userCfg.Enabled
+            ? null
+            : LimitCalculator.ResolvePreset(userCfg, config, local);
+        if (preset is not null)
+        {
+            var window = LimitCalculator.WindowFor(local, config);
+            var daily = _store.GetOrCreate(userId, today);
+            var sessionSeconds = daily.ActiveSessions.Values
+                .Select(s => s.SecondsWatched)
+                .DefaultIfEmpty(0)
+                .Max();
+            var remaining = LimitCalculator.Compute(preset, daily, window, sessionSeconds);
+            if (remaining.HasLimit)
+            {
+                timeRemaining = daily.ManuallyStopped ? 0 : Math.Max(0, remaining.RemainingSeconds);
+                timeBudget = preset.DailyCapMinutes is int dc
+                    ? (dc * 60L) + daily.DailyBonusSeconds
+                    : LimitCalculator.WindowCap(preset, window) is int wc
+                        ? (wc * 60L) + daily.DailyBonusSeconds
+                        : preset.SessionCapMinutes is int sc
+                            ? (sc * 60L) + daily.SessionBonusSeconds
+                            : null;
+                if (timeBudget is long budget)
+                {
+                    timeBudget = Math.Max(budget, timeRemaining.Value);
+                }
+            }
+        }
+
         // Watch options are the kid's OWN accessible library as posters (respecting their
         // Jellyfin library access + parental rating), so it never looks like "only these
         // few shows". The first page ships with the state; more pages come from kid/library.
@@ -540,6 +577,8 @@ public class RewardsController : ControllerBase
             RedeemableNow = redeemableNow,
             CoinsRedeemedToday = redeemedToday,
             MaxRedeemCoinsPerDay = config.MaxRedeemCoinsPerDay,
+            TimeRemainingSeconds = timeRemaining,
+            TimeBudgetSeconds = timeBudget,
             Chores = chores,
             Titles = titles,
             TitlesTotal = titlesTotal,
