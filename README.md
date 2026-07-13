@@ -231,3 +231,10 @@ POST http://server:8096/KidsLimit/bonus?user=Ada&minutes=30&token=YOURSECRET
 Offline/downloaded playback and Live TV are invisible to the server and out of
 scope. The plugin never disables accounts or unselects libraries — enforcement
 is strictly at the session level.
+
+## Credits
+
+The built-in chore pictures (`Web/clipart/*.svg`) are adapted from the
+[Mulberry Symbol Set](https://mulberrysymbols.org/) © Garry Paxton / Steve Lee,
+licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+Each SVG (symbol composed onto a colored plate) remains CC BY-SA 4.0.
