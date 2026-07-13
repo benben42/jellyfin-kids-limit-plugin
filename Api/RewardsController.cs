@@ -30,12 +30,14 @@ public class RewardsController : ControllerBase
 {
     private const int LedgerTailLength = 40;
     private const int LibraryPageSize = 60;
+    private const int RecentFrontMax = 20;
 
     private readonly RewardsService _rewards;
     private readonly WalletStore _wallets;
     private readonly StateStore _store;
     private readonly IUserManager _userManager;
     private readonly ILibraryManager _libraryManager;
+    private readonly IUserDataManager _userDataManager;
     private readonly NotificationService _notifications;
 
     /// <summary>
@@ -46,6 +48,7 @@ public class RewardsController : ControllerBase
     /// <param name="store">Daily state store.</param>
     /// <param name="userManager">User manager.</param>
     /// <param name="libraryManager">Library manager.</param>
+    /// <param name="userDataManager">User data manager (play dates for the watch-grid ordering).</param>
     /// <param name="notifications">Push-notification fan-out.</param>
     public RewardsController(
         RewardsService rewards,
@@ -53,6 +56,7 @@ public class RewardsController : ControllerBase
         StateStore store,
         IUserManager userManager,
         ILibraryManager libraryManager,
+        IUserDataManager userDataManager,
         NotificationService notifications)
     {
         _rewards = rewards;
@@ -60,6 +64,7 @@ public class RewardsController : ControllerBase
         _store = store;
         _userManager = userManager;
         _libraryManager = libraryManager;
+        _userDataManager = userDataManager;
         _notifications = notifications;
     }
 
@@ -727,6 +732,32 @@ public class RewardsController : ControllerBase
     }
 
     /// <summary>
+    /// Serves the kid's Jellyfin profile photo for the page header, so it works with only
+    /// the kid token (no Jellyfin session). 404 when the user has no profile image — the
+    /// page then falls back to its wave emoji.
+    /// </summary>
+    /// <param name="token">The per-user kid token.</param>
+    /// <returns>The profile image file.</returns>
+    [HttpGet("kid/avatar")]
+    public ActionResult KidAvatar([FromQuery] string? token = null)
+    {
+        var kid = ResolveKid(token);
+        if (kid is null)
+        {
+            return Unauthorized();
+        }
+
+        var path = _userManager.GetUserById(kid.Value.Guid)?.ProfileImage?.Path;
+        if (string.IsNullOrEmpty(path) || !System.IO.File.Exists(path))
+        {
+            return NotFound();
+        }
+
+        Response.Headers.CacheControl = "public, max-age=3600";
+        return PhysicalFile(path, ContentTypeFor(path));
+    }
+
+    /// <summary>
     /// Serves a built-in chore placeholder clipart as SVG. Public and cacheable — the art is
     /// static and carries no user data. Used by the kid tile (when a chore has no photo) and by
     /// the config-page picker. The key is validated against a fixed allow-list so it can never
@@ -771,6 +802,9 @@ public class RewardsController : ControllerBase
     /// Builds a page of the kid's accessible movies/series as priced poster tiles. Passing
     /// the user to the query makes Jellyfin apply that user's library access and parental
     /// rating, so only content the child is allowed to see comes back.
+    /// What she watched last comes first — movies and series MIXED by real recency (so the
+    /// thing she wants to finish sits up front, whatever it is) — then the rest
+    /// alphabetically.
     /// </summary>
     private (List<object> Items, int Total) LibraryPage(Guid userGuid, PluginConfiguration config, int skip, int take)
     {
@@ -780,27 +814,33 @@ public class RewardsController : ControllerBase
             return (new List<object>(), 0);
         }
 
+        skip = Math.Max(0, skip);
+        take = Math.Clamp(take, 1, 200);
+
+        var front = RecentlyWatchedFront(user);
+
         var query = new InternalItemsQuery(user)
         {
             IncludeItemTypes = new[] { BaseItemKind.Movie, BaseItemKind.Series },
             Recursive = true,
             IsVirtualItem = false,
             ImageTypes = new[] { ImageType.Primary }, // only items with a poster to tap
-            // What she watched last comes first (so the movie she wants to FINISH is right
-            // there), then the rest alphabetically. SortOrder moved to
-            // Jellyfin.Database.Implementations in 10.11 (same relocation noted for the
-            // User entity); fully-qualify so we don't add a brittle using.
+            ExcludeItemIds = front.Select(i => i.Id).ToArray(),
+            // SortOrder moved to Jellyfin.Database.Implementations in 10.11 (same
+            // relocation noted for the User entity); fully-qualify so we don't add a
+            // brittle using.
             OrderBy = new[]
             {
-                (ItemSortBy.DatePlayed, Jellyfin.Database.Implementations.Enums.SortOrder.Descending),
                 (ItemSortBy.SortName, Jellyfin.Database.Implementations.Enums.SortOrder.Ascending),
             },
-            StartIndex = Math.Max(0, skip),
-            Limit = Math.Clamp(take, 1, 200),
+            StartIndex = Math.Max(0, skip - front.Count),
+            Limit = take,
         };
 
         var result = _libraryManager.GetItemsResult(query);
-        var items = result.Items
+        var items = front.Skip(skip).Take(take)
+            .Concat(result.Items)
+            .Take(take)
             .Select(item => _rewards.BuildTitle(config, item, user))
             .Where(t => t is not null)
             .Select(t => (object)new
@@ -817,7 +857,62 @@ public class RewardsController : ControllerBase
             })
             .ToList();
 
-        return (items, result.TotalRecordCount);
+        return (items, front.Count + result.TotalRecordCount);
+    }
+
+    /// <summary>
+    /// The recently-watched titles that lead the watch grid, movies and series mixed.
+    /// Sorting Movie+Series by <see cref="ItemSortBy.DatePlayed"/> can't do this: a series
+    /// item never gets a play date of its own (only its episodes do), so every series would
+    /// sink into the alphabetical tail while movies float. Instead we ask for recently
+    /// played movies AND episodes, collapse each episode onto its series, and keep the
+    /// first <see cref="RecentFrontMax"/> distinct titles that have a poster.
+    /// </summary>
+    private List<BaseItem> RecentlyWatchedFront(Jellyfin.Database.Implementations.Entities.User user)
+    {
+        var recent = _libraryManager.GetItemList(new InternalItemsQuery(user)
+        {
+            IncludeItemTypes = new[] { BaseItemKind.Movie, BaseItemKind.Episode },
+            Recursive = true,
+            IsVirtualItem = false,
+            OrderBy = new[]
+            {
+                (ItemSortBy.DatePlayed, Jellyfin.Database.Implementations.Enums.SortOrder.Descending),
+            },
+            // Headroom: several episodes of one series collapse into a single tile.
+            Limit = RecentFrontMax * 3,
+        });
+
+        var front = new List<BaseItem>();
+        var seen = new HashSet<Guid>();
+        foreach (var item in recent)
+        {
+            if (_userDataManager.GetUserData(user, item)?.LastPlayedDate is null)
+            {
+                continue; // padding the DatePlayed sort returns, never actually played
+            }
+
+            var target = item is MediaBrowser.Controller.Entities.TV.Episode episode
+                ? (BaseItem?)episode.Series
+                : item;
+            if (target is null || !seen.Add(target.Id))
+            {
+                continue;
+            }
+
+            if (target.GetImageInfo(ImageType.Primary, 0) is null)
+            {
+                continue; // the grid only shows items with a poster to tap
+            }
+
+            front.Add(target);
+            if (front.Count >= RecentFrontMax)
+            {
+                break;
+            }
+        }
+
+        return front;
     }
 
     /// <summary>Coins the kid may still redeem today: bounded by balance and the daily cap.</summary>

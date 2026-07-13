@@ -30,8 +30,12 @@
         --grid-gap: 2.6vh;
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html { scroll-behavior: smooth; }
-    html, body { height: 100%; }
+    /* scroll-padding keeps a D-pad-focused tile from sliding under the sticky header */
+    html { scroll-behavior: smooth; scroll-padding-top: 16vh; }
+    /* min-height (not height): the sticky header can only stick within the body's own
+       box, so the body box must grow with the content instead of staying one viewport
+       tall. */
+    html, body { min-height: 100%; }
     body {
         color: #fff; overflow-x: hidden;
         font-family: "Baloo 2", "Segoe UI Rounded", -apple-system, Roboto, "Segoe UI", sans-serif;
@@ -44,14 +48,27 @@
     }
 
     /* -------- header: name + today's allowance + coin jar -------- */
+    /* Sticky: a D-pad has no "jump to top" gesture, so once the child scrolls deep
+       into the poster grid the coin counts would be unreachable — keep them pinned. */
     .header {
         display: flex; align-items: center; justify-content: space-between;
-        margin-bottom: 1.2vh; min-height: 11vh; gap: 2vw;
+        min-height: 11vh; gap: 2vw;
+        position: sticky; top: 0; z-index: 5;
+        margin: -2.2vh -3.2vw 1.2vh; padding: 2.2vh 3.2vw 1.4vh;
+        background: linear-gradient(160deg, rgba(29, 19, 66, .93), rgba(13, 16, 48, .93));
+        backdrop-filter: blur(1.2vh);
+        border-radius: 0 0 2.6vh 2.6vh;
+        box-shadow: 0 1vh 3vh rgba(0, 0, 0, .35);
     }
     #kidName {
         font-size: 5.2vh; font-weight: 800; letter-spacing: .2vh;
         display: flex; align-items: center; gap: 1.5vh; min-width: 0;
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    /* The kid's Jellyfin profile photo; the 👋 wave stands in when there is none. */
+    #kidName .avatar {
+        width: 8vh; height: 8vh; border-radius: 50%; object-fit: cover; flex: 0 0 auto;
+        border: .5vh solid rgba(255, 210, 74, .55); box-shadow: 0 .8vh 2vh rgba(0, 0, 0, .4);
     }
     #kidName .wave { display: inline-block; animation: wave 2.2s ease-in-out infinite; transform-origin: 70% 70%; }
     @keyframes wave { 0%,60%,100% { transform: rotate(0); } 15% { transform: rotate(16deg); } 30% { transform: rotate(-8deg); } 45% { transform: rotate(12deg); } }
@@ -114,6 +131,14 @@
     .coin {
         display: inline-block; width: 1em; height: 1em; vertical-align: -.12em;
         background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='11' fill='%23e8a512'/%3E%3Ccircle cx='12' cy='12' r='8.7' fill='%23ffd24a' stroke='%23d0920f' stroke-width='1.1'/%3E%3Cpath d='M12 6.1l1.79 3.63 4.01.58-2.9 2.83.68 3.99L12 15.25l-3.58 1.88.68-3.99-2.9-2.83 4.01-.58z' fill='%23c9880e'/%3E%3C/svg%3E") no-repeat center / contain;
+        filter: drop-shadow(0 .06em .05em rgba(0,0,0,.35));
+    }
+
+    /* A 3-2-1 pile of the same star-coins: shown instead of a row once a count
+       passes 4 — long coin rows stop being countable and just eat the header. */
+    .coinPile {
+        display: inline-block; width: 1.55em; height: 1.1em; vertical-align: -.16em;
+        background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 76 54'%3E%3Cdefs%3E%3Cg id='c'%3E%3Ccircle r='11' fill='%23e8a512'/%3E%3Ccircle r='8.7' fill='%23ffd24a' stroke='%23d0920f' stroke-width='1.1'/%3E%3Cpath d='M0 -5.9l1.79 3.63 4.01.58-2.9 2.83.68 3.99L0 3.25l-3.58 1.88.68-3.99-2.9-2.83 4.01-.58z' fill='%23c9880e'/%3E%3C/g%3E%3C/defs%3E%3Cuse href='%23c' x='14' y='42'/%3E%3Cuse href='%23c' x='38' y='42'/%3E%3Cuse href='%23c' x='62' y='42'/%3E%3Cuse href='%23c' x='26' y='27'/%3E%3Cuse href='%23c' x='50' y='27'/%3E%3Cuse href='%23c' x='38' y='12'/%3E%3C/svg%3E") no-repeat center / contain;
         filter: drop-shadow(0 .06em .05em rgba(0,0,0,.35));
     }
 
@@ -213,10 +238,17 @@
             --poster-h: clamp(192px, 63vw, 315px); /* 1.5 × --tile, keeps the 2:3 poster */
             --grid-gap: clamp(12px, 3.4vw, 26px);
         }
+        html { scroll-padding-top: clamp(110px, 32vw, 190px); }
         body { padding: 2vh 4vw 8vh; }
 
-        .header { min-height: 0; flex-wrap: wrap; gap: 2vw; margin-bottom: 2vh; }
+        /* header wraps to two rows (name / wallet) — re-match the sticky bleed to the
+           portrait body padding */
+        .header {
+            min-height: 0; flex-wrap: wrap; gap: 2vw;
+            margin: -2vh -4vw 2vh; padding: 1.6vh 4vw 1.2vh; border-radius: 0 0 5vw 5vw;
+        }
         #kidName { font-size: clamp(22px, 6.5vw, 44px); gap: 2vw; }
+        #kidName .avatar { width: clamp(30px, 9vw, 52px); height: clamp(30px, 9vw, 52px); }
         .wallet { gap: 2.5vw; }
         .chipBox { border-radius: 999px; padding: 1.2vh 3vw; gap: 2vw; }
         #jarCoins { font-size: clamp(18px, 5vw, 34px); letter-spacing: -.3vw; }
@@ -347,14 +379,41 @@
 
     function coin() { return '<span class="coin"></span>'; }
 
+    // Up to 4 coins are drawn individually (countable by a 6-year-old); past that a
+    // long row just eats the header, so it becomes a pile — the number does the counting.
     function coinRow(n) {
-        var shown = Math.min(n, 8);
+        if (n <= 0) { return '🫙'; }
+        if (n > 4) { return '<span class="coinPile"></span>'; }
         var out = '';
-        for (var i = 0; i < shown; i++) { out += coin(); }
-        return out || '🫙';
+        for (var i = 0; i < n; i++) { out += coin(); }
+        return out;
     }
 
     function redeemable() { return state ? state.RedeemableNow : 0; }
+
+    var lastName = null;
+
+    // Header identity: the kid's Jellyfin profile photo when she has one, the classic
+    // 👋 wave otherwise. Rendered only when the name changes so the 5 s poll doesn't
+    // re-fetch the image or restart the wave animation.
+    function renderName(name) {
+        if (name === lastName) { return; }
+        lastName = name;
+        var el = document.getElementById('kidName');
+        el.innerHTML = '';
+        var img = document.createElement('img');
+        img.className = 'avatar';
+        img.alt = '';
+        img.onerror = function () {
+            var wave = document.createElement('span');
+            wave.className = 'wave';
+            wave.textContent = '👋';
+            img.replaceWith(wave);
+        };
+        img.src = 'kid/avatar?token=' + encodeURIComponent(token);
+        el.appendChild(img);
+        el.appendChild(document.createTextNode(name));
+    }
 
     // Why posters are locked right now: 'coins' = jar is empty (go do chores),
     // 'moon' = coins saved but today's spend allowance is used up (tomorrow!).
@@ -378,11 +437,14 @@
 
         var left = redeemable();
         var spent = Math.min(cap, state.CoinsRedeemedToday || 0);
-        var bright = Math.min(left, 6);
-        var dim = Math.min(spent, Math.max(0, 6 - bright));
         var html = '<span class="sun">' + (left > 0 ? '☀️' : '🌙') + '</span><span class="todayCoins">';
-        for (var i = 0; i < bright; i++) { html += coin(); }
-        for (var j = 0; j < dim; j++) { html += '<span class="coin spent"></span>'; }
+        if (left > 4) {
+            html += '<span class="coinPile"></span>';
+        } else {
+            for (var i = 0; i < left; i++) { html += coin(); }
+            var dim = Math.min(spent, Math.max(0, 4 - left));
+            for (var j = 0; j < dim; j++) { html += '<span class="coin spent"></span>'; }
+        }
         html += '</span><span id="todayCount">' + left + '</span>';
         el.classList.toggle('empty', left <= 0);
         el.innerHTML = html;
@@ -523,8 +585,7 @@
         // a parent's approve/reject or coin grant shows up almost immediately.
         api(initial ? 'state' : 'state?light=1').then(function (s) {
             state = s;
-            document.getElementById('kidName').innerHTML =
-                '<span class="wave">👋</span>' + esc(s.Name);
+            renderName(s.Name);
             renderJar();
             renderToday();
             renderChores();
