@@ -80,8 +80,10 @@
         border-radius: 4vh; padding: 1.1vh 2.6vh;
         box-shadow: 0 1.5vh 4vh rgba(0, 0, 0, .35);
     }
-    /* Piggy-bank capsule: saved gold coins + how many may come out today. The ☀️ count is
-       the piggy's daily "door", not a third currency, so it lives INSIDE the same capsule. */
+    /* Piggy-bank capsule: how many coins may come out today (☀️, shown FIRST — it's the
+       number she can actually spend right now), then the pig with all her saved coins.
+       The ☀️ count is the piggy's daily "door", not a third currency, so it lives INSIDE
+       the same capsule. */
     #jar { border: .5vh solid rgba(255, 210, 74, .5); box-shadow: 0 1.5vh 4vh rgba(0,0,0,.35), inset 0 0 3vh rgba(255, 210, 74, .1); }
     #jar .pig { font-size: 3.8vh; filter: drop-shadow(0 .4vh .3vh rgba(0,0,0,.4)); }
     #jarCoins { font-size: 3.8vh; letter-spacing: -.6vh; filter: drop-shadow(0 .4vh .3vh rgba(0,0,0,.4)); }
@@ -123,6 +125,11 @@
         font-size: 2.1vh; font-weight: 800; opacity: .85; background: rgba(255,255,255,.1);
         padding: .6vh 1.8vh; border-radius: 3vh; letter-spacing: .05vh;
     }
+    /* Earning is GREEN, spending is GOLD — one consistent color story everywhere
+       (pills, badges, tile borders) so "chores fill the piggy, the rest empties it"
+       reads without a single word. */
+    .rowTitle .pill.earn { background: rgba(88, 224, 139, .16); color: #b9f5cf; }
+    .rowTitle .pill.spend { background: rgba(255, 210, 74, .14); color: #ffe9ac; }
     .grid { display: flex; flex-wrap: wrap; gap: var(--grid-gap); align-items: flex-start; }
 
     .tile {
@@ -143,7 +150,8 @@
     /* Locked-because-daily-allowance-is-spent reads differently from locked-because-broke:
        the moon says "come back tomorrow", the padlock says "you need more coins". */
     .tile.disabled.lockMoon::after { content: "🌙"; }
-    /* A pending/done chore already explains itself with its ⏳/✅ overlay — no padlock. */
+    /* A pending/done chore already explains itself with its 📨/✅ overlay — no padlock.
+       (📨, not an hourglass: "your note went to mum/dad" is a picture a 6-year-old gets.) */
     .chore.disabled::after { content: none; }
 
     /* Gold coin with a star — the plugin's coin icon. Sized by font-size (1em square). */
@@ -180,6 +188,10 @@
         box-shadow: 0 .8vh 2vh rgba(0,0,0,.35); display: flex; align-items: center; gap: .4vh;
         line-height: 1.25;
     }
+    /* Chore badges are green "+coin" (you GET this); spend badges stay gold (it COSTS). */
+    .badge.earn { background: linear-gradient(150deg, #8af0b0, #35c46f); color: #06371c; }
+    /* Faint green edge on chore tiles reinforces "this row gives" (focus ring still wins). */
+    .chore { border-color: rgba(88, 224, 139, .35); }
     .stateBadge {
         position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
         font-size: 8.5vh; background: rgba(13, 16, 48, .55); border-radius: 2.2vh;
@@ -302,10 +314,12 @@
     }
 
     /* Narrow phones: the name + both coin chips won't fit on one row, so drop the
-       wallet onto its own line and let the two chips share the full width. */
+       wallet onto its own line and let the two chips share the full width. The chips
+       may still not fit side by side (☀️ + 🐷 + coin pile is wide) — wrap rather
+       than clip the piggy count off-screen. */
     @media (orientation: portrait) and (max-width: 520px) {
         #kidName { flex: 1 1 100%; }
-        .wallet { width: 100%; justify-content: space-between; }
+        .wallet { width: 100%; justify-content: space-between; flex-wrap: wrap; }
     }
 
     /* Phone held sideways: landscape but very short. The height-based defaults shrink
@@ -331,24 +345,27 @@
                 <span id="tvMins"></span>
             </div>
             <div id="jar" class="chipBox">
+                <span id="todayWrap"><span id="todaySun"></span><span id="todayCount"></span><span class="divider"></span></span>
                 <span class="pig">🐷</span><span id="jarCoins"></span><span id="jarCount"></span>
-                <span id="todayWrap"><span class="divider"></span><span id="todaySun"></span><span id="todayCount"></span></span>
             </div>
         </div>
     </div>
 
-    <div id="choreSection" class="section hidden">
-        <div class="rowTitle">🧹✨ <span class="pill"><span class="coin"></span> earn coins</span></div>
+    <!-- Picture language for a non-reader: green sections/badges GIVE coins
+         (coin flies INTO the piggy), gold sections/badges COST coins (piggy
+         pays a coin OUT). The pills draw that as a tiny coin-flow diagram. -->
+    <div id="choreSection" class="section earnSection hidden">
+        <div class="rowTitle">🧹✨ <span class="pill earn">+&nbsp;<span class="coin"></span> ➜ 🐷</span></div>
         <div id="chores" class="grid"></div>
     </div>
 
     <div id="timeSection" class="section">
-        <div class="rowTitle">⏳➕ <span class="pill"><span class="coin"></span> more time</span></div>
+        <div class="rowTitle">📺➕ <span class="pill spend">🐷 ➜ <span class="coin"></span></span></div>
         <div id="timeTiles" class="grid"></div>
     </div>
 
     <div id="titleSection" class="section">
-        <div class="rowTitle">📺🍿 <span class="pill"><span class="coin"></span> pick &amp; watch</span></div>
+        <div class="rowTitle">📺🍿 <span class="pill spend">🐷 ➜ <span class="coin"></span></span></div>
         <div id="titles" class="grid"></div>
     </div>
 
@@ -536,8 +553,8 @@
                 ' data-kind="chore" data-id="' + esc(c.Id) + '" data-blocked="' + (blocked ? '1' : '0') + '">' +
                 choreFace(c) +
                 '<div class="name">' + esc(c.Name) + '</div>' +
-                '<div class="badge">' + coin() + c.Coins + '</div>' +
-                (pending ? '<div class="stateBadge">⏳</div>' : (done ? '<div class="stateBadge">✅</div>' : '')) +
+                '<div class="badge earn">+' + coin() + c.Coins + '</div>' +
+                (pending ? '<div class="stateBadge">📨</div>' : (done ? '<div class="stateBadge">✅</div>' : '')) +
                 '</div>';
         }).join('');
 
@@ -575,7 +592,7 @@
         return '<div class="tile timeTile' + (blocked ? ' disabled' : '') +
             (reason === 'moon' ? ' lockMoon' : '') + '" tabindex="0"' +
             ' data-kind="time" data-coins="' + coins + '" data-blocked="' + (blocked ? '1' : '0') + '">' +
-            '<div class="icon">⏳</div>' +
+            '<div class="icon">📺</div>' +
             '<div class="name">+' + mins + ' ⏱</div>' +
             '<div class="badge">' + coin() + coins + '</div>' +
             '</div>';
@@ -730,7 +747,7 @@
         } else if (kind === 'time') {
             var n = parseInt(tile.getAttribute('data-coins'), 10) || 1;
             openOverlay(
-                '<span style="font-size:16vh;">⏳</span>',
+                '<span style="font-size:16vh;">📺</span>',
                 coin() + ' × ' + n + ' → +' + (n * state.CoinMinutes) + ' ⏱ ?',
                 [
                     { label: '👍', go: true, action: function () { redeemTime(n); } },
@@ -758,7 +775,7 @@
         api('claim?choreId=' + encodeURIComponent(choreId), 'POST').then(function (r) {
             if (r.Ok) {
                 sndYay();
-                flashOverlay('📨 ⏳', 'ask mum/dad', 2200, true);
+                flashOverlay('📨', 'ask mum/dad', 2200, true);
             } else {
                 sndNo();
                 flashOverlay('🚫', '', 1800, true);
@@ -776,8 +793,8 @@
             } else {
                 sndYay();
                 // Played on her Jellyfin session, or a nudge to open the Jellyfin app.
-                // Partial: she got part of the movie — the hourglass hints there's more later.
-                var art = (r.Played ? '🎉 ▶️' : '🎉 📺 👆') + (r.Partial ? ' ⏳' : '');
+                // Partial: she got part of the movie — the moon hints the rest comes another day.
+                var art = (r.Played ? '🎉 ▶️' : '🎉 📺 👆') + (r.Partial ? ' 🌙' : '');
                 flashOverlay(art, '', r.Played ? 2600 : 4200, true);
             }
         }).catch(function () { sndNo(); flashOverlay('⚠️', '', 1800); });
@@ -791,7 +808,7 @@
                 else { flashOverlay(coin() + '🔒', '🧹✨ ➜ ' + coin(), 2200, true); }
             } else {
                 sndYay();
-                flashOverlay('🎉 ⏳ +' + (coins * state.CoinMinutes) + ' ⏱', '', 2600, true);
+                flashOverlay('🎉 📺 +' + (coins * state.CoinMinutes) + ' ⏱', '', 2600, true);
             }
         }).catch(function () { sndNo(); flashOverlay('⚠️', '', 1800); });
     }
