@@ -54,6 +54,7 @@
     .barRow { display: flex; align-items: center; gap: .55em; font-size: .85em; }
     .barRow .lbl { width: 5.2em; color: var(--sub); flex: 0 0 auto; }
     .barRow .val { margin-left: auto; white-space: nowrap; color: var(--sub); }
+    .barRow .val .bonusTag { color: var(--good); font-weight: 600; }
     .bar { flex: 1 1 auto; height: 8px; border-radius: 5px; background: rgba(255,255,255,.12); overflow: hidden; min-width: 50px; }
     .bar > span { display: block; height: 100%; border-radius: 5px; }
 
@@ -134,17 +135,28 @@
 
     function barColor(pct) { return pct >= 1 ? 'var(--bad)' : pct >= 0.8 ? 'var(--warn)' : 'var(--good)'; }
 
-    function bar(used, cap) {
+    function bar(used, cap, bonusSec) {
         if (cap === null || cap === undefined) {
             return '<div class="bar"><span style="width:100%;background:rgba(46,204,113,.4);"></span></div>';
         }
-        var pct = cap > 0 ? Math.min(1, used / (cap * 60)) : 1;
+        // Size the bar against the effective cap (base + any bonus that applies here) so a
+        // kid who is within granted bonus isn't shown maxed-out red.
+        var capSec = (cap * 60) + (bonusSec || 0);
+        var pct = capSec > 0 ? Math.min(1, used / capSec) : 1;
         return '<div class="bar"><span style="width:' + (pct * 100).toFixed(0) + '%;background:' + barColor(pct) + ';"></span></div>';
     }
 
-    function barRow(label, used, cap) {
-        return '<div class="barRow"><span class="lbl">' + label + '</span>' + bar(used, cap) +
-            '<span class="val">' + fmt(used) + ' / ' + capText(cap) + '</span></div>';
+    // bonusSec: bonus seconds that apply to THIS row (daily, or the active window).
+    // Shown as e.g. "1h 6m / 1h 0m +10b" so being over the base cap is clearly explained
+    // by granted bonus rather than looking like a limit that failed.
+    function barRow(label, used, cap, bonusSec) {
+        bonusSec = bonusSec || 0;
+        var capLabel = capText(cap);
+        if (bonusSec > 0 && cap !== null && cap !== undefined) {
+            capLabel += ' <span class="bonusTag">+' + Math.round(bonusSec / 60) + 'b</span>';
+        }
+        return '<div class="barRow"><span class="lbl">' + label + '</span>' + bar(used, cap, bonusSec) +
+            '<span class="val">' + fmt(used) + ' / ' + capLabel + '</span></div>';
     }
 
     function kidLinkFor(userId) {
@@ -178,12 +190,12 @@
                 '<span class="chip" style="background:' + remColor + ';">' + remaining + '</span>' +
                 (s.HasLimit && s.BindingCap ? '<span class="sub">(' + esc(s.BindingCap) + ' cap)</span>' : '') +
             '</div>' +
-            barRow('Today', s.SecondsWatchedTotal, s.DailyCapMinutes) +
-            (s.BonusSeconds > 0 ? '<div class="sub" style="color:var(--good);">+' + fmt(s.BonusSeconds) + ' bonus added today</div>' : '') +
+            barRow('Today', s.SecondsWatchedTotal, s.DailyCapMinutes, s.BonusSeconds) +
+            (s.BonusSeconds > 0 ? '<div class="sub" style="color:var(--good);">+' + fmt(s.BonusSeconds) + ' bonus added today (applies to daily + the current window)</div>' : '') +
             barRow('Session', s.CurrentSessionSeconds, s.SessionCapMinutes) +
-            barRow('Morning', s.SecondsMorning, s.MorningCapMinutes) +
-            barRow('Afternoon', s.SecondsAfternoon, s.AfternoonCapMinutes) +
-            barRow('Evening', s.SecondsEvening, s.EveningCapMinutes) +
+            barRow('Morning', s.SecondsMorning, s.MorningCapMinutes, s.CurrentWindow === 'Morning' ? s.BonusSeconds : 0) +
+            barRow('Afternoon', s.SecondsAfternoon, s.AfternoonCapMinutes, s.CurrentWindow === 'Afternoon' ? s.BonusSeconds : 0) +
+            barRow('Evening', s.SecondsEvening, s.EveningCapMinutes, s.CurrentWindow === 'Evening' ? s.BonusSeconds : 0) +
             '<div id="hist-' + esc(s.UserId) + '" class="sub">History…</div>' +
             '<div class="section" id="wallet-' + esc(s.UserId) + '">Coins…</div>' +
             '<div class="section btns">' +

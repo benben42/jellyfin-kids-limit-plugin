@@ -35,6 +35,7 @@
         #kidsLimitDashboardPage .klBarRow { display:flex; align-items:center; gap:.6em; font-size:.88em; }
         #kidsLimitDashboardPage .klBarRow .lbl { width:5.5em; opacity:.75; flex:0 0 auto; }
         #kidsLimitDashboardPage .klBarRow .val { margin-left:auto; opacity:.85; white-space:nowrap; }
+        #kidsLimitDashboardPage .klBonusTag { color:#27ae60; opacity:1; font-weight:600; }
         #kidsLimitDashboardPage .klBar {
             flex:1 1 auto; height:9px; border-radius:6px; background:rgba(127,127,127,.22); overflow:hidden; min-width:60px;
         }
@@ -104,19 +105,30 @@
             return pct >= 1 ? '#c0392b' : pct >= 0.8 ? '#e67e22' : '#27ae60';
         }
 
-        function bar(used, cap) {
+        function bar(used, cap, bonusSec) {
             if (cap === null || cap === undefined) {
                 return '<div class="klBar"><span style="width:100%;background:rgba(39,174,96,.5);"></span></div>';
             }
-            var pct = cap > 0 ? Math.min(1, used / (cap * 60)) : 1;
+            // Size the bar against the *effective* cap (base + any bonus that applies to
+            // this scope) so a kid who is within granted bonus isn't shown maxed-out red.
+            var capSec = (cap * 60) + (bonusSec || 0);
+            var pct = capSec > 0 ? Math.min(1, used / capSec) : 1;
             return '<div class="klBar"><span style="width:' + (pct * 100).toFixed(0) + '%;' +
                 'background:' + barColor(pct) + ';"></span></div>';
         }
 
-        function barRow(label, used, cap) {
+        // bonusSec: bonus seconds that apply to THIS row's cap (daily, or the active
+        // window). Rendered as e.g. "1h 6m / 1h 0m +10b" so an over-base-cap reading is
+        // clearly explained by granted bonus rather than looking like a broken limit.
+        function barRow(label, used, cap, bonusSec) {
+            bonusSec = bonusSec || 0;
+            var capLabel = capText(cap);
+            if (bonusSec > 0 && cap !== null && cap !== undefined) {
+                capLabel += ' <span class="klBonusTag">+' + Math.round(bonusSec / 60) + 'b</span>';
+            }
             return '<div class="klBarRow"><span class="lbl">' + label + '</span>' +
-                bar(used, cap) +
-                '<span class="val">' + fmt(used) + ' / ' + capText(cap) + '</span></div>';
+                bar(used, cap, bonusSec) +
+                '<span class="val">' + fmt(used) + ' / ' + capLabel + '</span></div>';
         }
 
         function kidLinkFor(userId) {
@@ -146,12 +158,12 @@
                     '<span class="klChip" style="background:' + remColor + ';">' + remaining + '</span>' +
                     (s.HasLimit && s.BindingCap ? '<span class="klSub">(' + esc(s.BindingCap) + ' cap)</span>' : '') +
                 '</div>' +
-                barRow('Today', s.SecondsWatchedTotal, s.DailyCapMinutes) +
-                (s.BonusSeconds > 0 ? '<div class="klSub" style="color:#27ae60;">+' + fmt(s.BonusSeconds) + ' bonus added today</div>' : '') +
+                barRow('Today', s.SecondsWatchedTotal, s.DailyCapMinutes, s.BonusSeconds) +
+                (s.BonusSeconds > 0 ? '<div class="klSub" style="color:#27ae60;">+' + fmt(s.BonusSeconds) + ' bonus added today (applies to daily + the current window)</div>' : '') +
                 barRow('Session', s.CurrentSessionSeconds, s.SessionCapMinutes) +
-                barRow('Morning', s.SecondsMorning, s.MorningCapMinutes) +
-                barRow('Afternoon', s.SecondsAfternoon, s.AfternoonCapMinutes) +
-                barRow('Evening', s.SecondsEvening, s.EveningCapMinutes) +
+                barRow('Morning', s.SecondsMorning, s.MorningCapMinutes, s.CurrentWindow === 'Morning' ? s.BonusSeconds : 0) +
+                barRow('Afternoon', s.SecondsAfternoon, s.AfternoonCapMinutes, s.CurrentWindow === 'Afternoon' ? s.BonusSeconds : 0) +
+                barRow('Evening', s.SecondsEvening, s.EveningCapMinutes, s.CurrentWindow === 'Evening' ? s.BonusSeconds : 0) +
                 '<div id="hist-' + esc(s.UserId) + '" class="klSub">History…</div>' +
                 '<div class="klSection" id="wallet-' + esc(s.UserId) + '">Coins…</div>' +
                 '<div class="klSection klBtns">' +
