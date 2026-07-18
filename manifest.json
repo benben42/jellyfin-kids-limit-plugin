@@ -9,6 +9,14 @@
     "imageUrl": "",
     "versions": [
       {
+        "version": "1.5.0.0",
+        "changelog": "See the GitHub release notes.",
+        "targetAbi": "10.11.11.0",
+        "sourceUrl": "https://github.com/benben42/jellyfin-kids-limit-plugin/releases/download/v1.5.0.0/jellyfin-kids-limit-plugin_1.5.0.0.zip",
+        "checksum": "cfe9c759d8a1186179cf8f70940be54f",
+        "timestamp": "2026-07-18T09:21:58Z"
+      },
+      {
         "version": "1.4.1.0",
         "changelog": "See the GitHub release notes.",
         "targetAbi": "10.11.11.0",
