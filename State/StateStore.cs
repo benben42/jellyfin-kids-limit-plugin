@@ -147,6 +147,8 @@ public class StateStore
             {
                 sess.Blocked = false;
                 sess.Warned = false;
+                sess.OverLimitSinceUtc = null;
+                sess.OverLimitAlerted = false;
             }
         });
         FlushDebounced(force: true);
@@ -170,6 +172,8 @@ public class StateStore
                 {
                     sess.Blocked = false;
                     sess.Warned = false;
+                    sess.OverLimitSinceUtc = null;
+                    sess.OverLimitAlerted = false;
                 }
             }
         });
@@ -288,6 +292,8 @@ public class StateStore
             sess.SecondsWatched = 0;
             sess.Warned = false;
             sess.Blocked = false;
+            sess.OverLimitSinceUtc = null;
+            sess.OverLimitAlerted = false;
         }
 
         _dirty.Add(state.UserId);
@@ -380,6 +386,8 @@ public class StateStore
                 SecondsWatched = kv.Value.SecondsWatched,
                 Warned = kv.Value.Warned,
                 Blocked = kv.Value.Blocked,
+                OverLimitSinceUtc = kv.Value.OverLimitSinceUtc,
+                OverLimitAlerted = kv.Value.OverLimitAlerted,
                 LastTickUtc = kv.Value.LastTickUtc,
             },
             StringComparer.Ordinal),

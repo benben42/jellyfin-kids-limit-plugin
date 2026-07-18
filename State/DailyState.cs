@@ -102,6 +102,15 @@ public class SessionState
     public bool Blocked { get; set; }
 
     /// <summary>
+    /// Gets or sets when this session was first seen still actively playing while over
+    /// limit. Drives the "auto-stop failed" parent alert; null while under limit.
+    /// </summary>
+    public DateTime? OverLimitSinceUtc { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether the over-limit alert was already sent for this sitting.</summary>
+    public bool OverLimitAlerted { get; set; }
+
+    /// <summary>
     /// Gets or sets the UTC timestamp of the last progress tick used to compute deltas.
     /// Not persisted meaningfully across restarts (treated as "now" on first tick).
     /// </summary>

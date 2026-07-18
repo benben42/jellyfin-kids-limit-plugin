@@ -147,6 +147,24 @@
                     </details>
                 </div>
 
+                <div class="verticalSection">
+                    <h3 class="sectionTitle">Over-limit alert</h3>
+                    <label class="checkboxContainer">
+                        <input is="emby-checkbox" type="checkbox" id="overLimitAlertEnabled" />
+                        <span>Notify me when a kid keeps watching past their limit (auto-stop failed)</span>
+                    </label>
+                    <div class="inputContainer" style="margin-top:1em;">
+                        <label class="inputLabel inputLabelUnfocused" for="overLimitAlertMinutes">Alert after this many minutes of continued playback past the limit</label>
+                        <input is="emby-input" type="number" min="1" id="overLimitAlertMinutes" />
+                    </div>
+                    <div class="fieldDescription">
+                        If a client ignores the Stop command and a kid is still actively playing this many
+                        minutes after going over limit, a push notification is sent to the notification
+                        targets configured on the Rewards tab — so you know the automatic stop failed.
+                        One alert per sitting.
+                    </div>
+                </div>
+
                 </div><!-- /tab general -->
 
                 <div class="kidsLimitTabPage" data-tab="presets">
@@ -795,6 +813,9 @@
                 page.querySelector('#enforceViaAccessSchedule').checked = !!cfg.EnforceViaAccessSchedule;
                 page.querySelector('#hardEnforcementMode').value =
                     cfg.HardEnforcementMode === 'DisablePlayback' ? 'DisablePlayback' : 'AccessSchedule';
+                page.querySelector('#overLimitAlertEnabled').checked = cfg.OverLimitAlertEnabled !== false;
+                page.querySelector('#overLimitAlertMinutes').value =
+                    cfg.OverLimitAlertMinutes > 0 ? cfg.OverLimitAlertMinutes : 3;
 
                 chores = cfg.Chores || [];
                 refItemIds = (cfg.ReferenceItemIds || []).slice();
@@ -826,6 +847,8 @@
                 cfg.PublicBaseUrl = page.querySelector('#publicBaseUrl').value.trim();
                 cfg.EnforceViaAccessSchedule = page.querySelector('#enforceViaAccessSchedule').checked;
                 cfg.HardEnforcementMode = page.querySelector('#hardEnforcementMode').value;
+                cfg.OverLimitAlertEnabled = page.querySelector('#overLimitAlertEnabled').checked;
+                cfg.OverLimitAlertMinutes = parseInt(page.querySelector('#overLimitAlertMinutes').value, 10) || 3;
                 cfg.Presets = presets;
                 cfg.Users = collectUsers();
                 cfg.CoinMinutes = parseInt(page.querySelector('#coinMinutes').value, 10) || 5;

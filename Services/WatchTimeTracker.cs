@@ -30,6 +30,7 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
     private readonly RewardsService _rewards;
     private readonly HardBlockEnforcer _enforcer;
     private readonly PlaybackTerminator _terminator;
+    private readonly NotificationService _notifications;
     private readonly ILogger<WatchTimeTracker> _logger;
 
     private Timer? _maintenanceTimer;
@@ -43,6 +44,7 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
     /// <param name="rewards">Rewards service.</param>
     /// <param name="enforcer">Hard-block enforcer.</param>
     /// <param name="terminator">Playback terminator.</param>
+    /// <param name="notifications">Push-notification fan-out (over-limit alerts).</param>
     /// <param name="logger">Logger.</param>
     public WatchTimeTracker(
         ISessionManager sessionManager,
@@ -51,6 +53,7 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
         RewardsService rewards,
         HardBlockEnforcer enforcer,
         PlaybackTerminator terminator,
+        NotificationService notifications,
         ILogger<WatchTimeTracker> logger)
     {
         _sessionManager = sessionManager;
@@ -59,6 +62,7 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
         _rewards = rewards;
         _enforcer = enforcer;
         _terminator = terminator;
+        _notifications = notifications;
         _logger = logger;
     }
 
@@ -207,6 +211,8 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
                     ss.SecondsWatched = 0;
                     ss.Warned = false;
                     ss.Blocked = false;
+                    ss.OverLimitSinceUtc = null;
+                    ss.OverLimitAlerted = false;
                 }
 
                 long delta = 0;
@@ -248,13 +254,37 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
                     decision.NewlyBlocked = !ss.Blocked;
                     ss.Blocked = true;
                     decision.Stop = true; // Re-send every tick for robustness against clients that ignore it.
+
+                    // Watchdog: time still accruing (delta > 0) means the client is playing
+                    // on despite the Stop. After the configured grace, alert the parent that
+                    // auto-stop appears to have failed — once per sitting.
+                    if (delta > 0)
+                    {
+                        ss.OverLimitSinceUtc ??= nowUtc;
+                        var overFor = nowUtc - ss.OverLimitSinceUtc.Value;
+                        if (!ss.OverLimitAlerted &&
+                            config.OverLimitAlertEnabled &&
+                            overFor.TotalMinutes >= Math.Max(1, config.OverLimitAlertMinutes))
+                        {
+                            ss.OverLimitAlerted = true;
+                            decision.AlertOverLimit = true;
+                            decision.OverLimitMinutes = (int)Math.Round(overFor.TotalMinutes);
+                        }
+                    }
                 }
-                else if (!ss.Warned &&
-                         remaining.RemainingSeconds <= (long)userCfg.WarnMinutesBeforeLimit * 60)
+                else
                 {
-                    ss.Warned = true;
-                    decision.Warn = true;
-                    decision.RemainingSeconds = remaining.RemainingSeconds;
+                    // Back under limit (e.g. bonus granted) — re-arm the watchdog.
+                    ss.OverLimitSinceUtc = null;
+                    ss.OverLimitAlerted = false;
+
+                    if (!ss.Warned &&
+                        remaining.RemainingSeconds <= (long)userCfg.WarnMinutesBeforeLimit * 60)
+                    {
+                        ss.Warned = true;
+                        decision.Warn = true;
+                        decision.RemainingSeconds = remaining.RemainingSeconds;
+                    }
                 }
             });
 
@@ -290,6 +320,28 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
             else if (decision.Warn)
             {
                 _ = SendWarnAsync(sessionId, userCfg.WarnMinutesBeforeLimit);
+            }
+
+            if (decision.AlertOverLimit)
+            {
+                var kidName = string.IsNullOrWhiteSpace(session.UserName)
+                    ? (string.IsNullOrWhiteSpace(userCfg.UserName) ? userId : userCfg.UserName)
+                    : session.UserName;
+                _logger.LogWarning(
+                    "KidsLimit: {User} still playing {Minutes} min after their limit on " +
+                    "'{Device}' ({Client}) — auto-stop appears to have failed; notifying parent.",
+                    kidName,
+                    decision.OverLimitMinutes,
+                    session.DeviceName,
+                    session.Client);
+                _notifications.Send(
+                    config,
+                    "⚠️ Auto-stop failed?",
+                    $"{kidName} is still watching {decision.OverLimitMinutes} min after the limit " +
+                    $"on {session.DeviceName} ({session.Client}). The Stop command seems to be ignored." +
+                    (config.EnforceViaAccessSchedule
+                        ? string.Empty
+                        : " Consider enabling hard enforcement in settings, or use Stop now on the parent page."));
             }
         }
         catch (Exception ex)
@@ -351,5 +403,7 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
         public bool NewlyBlocked;
         public bool Warn;
         public long RemainingSeconds;
+        public bool AlertOverLimit;
+        public int OverLimitMinutes;
     }
 }
