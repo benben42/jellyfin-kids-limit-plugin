@@ -69,7 +69,7 @@ public class SettingsController : ControllerBase
             Chores = config.Chores,
             NotificationTargets = config.NotificationTargets,
             ReferenceItemIds = config.ReferenceItemIds,
-            AllUsers = _userManager.Users
+            AllUsers = _userManager.GetUsers()
                 .Select(u => new JellyfinUserDto
                 {
                     UserId = u.Id.ToString("N", CultureInfo.InvariantCulture),
