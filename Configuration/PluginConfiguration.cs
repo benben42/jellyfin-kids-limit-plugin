@@ -33,6 +33,9 @@ public class PluginConfiguration : BasePluginConfiguration
         BankCapCoins = 24;
         MaxRedeemCoinsPerDay = 6;
 
+        OverLimitAlertEnabled = true;
+        OverLimitAlertMinutes = 3;
+
         // IMPORTANT: do NOT seed the built-in presets here. The XML serializer *appends*
         // to a collection that the constructor already populated instead of replacing it,
         // so seeding defaults in the constructor duplicated every built-in preset on each
@@ -94,6 +97,21 @@ public class PluginConfiguration : BasePluginConfiguration
         string.Equals(HardEnforcementMode, ModeDisablePlayback, StringComparison.OrdinalIgnoreCase)
             ? ModeDisablePlayback
             : ModeAccessSchedule;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the parent should be notified (via the
+    /// configured notification targets) when a kid keeps actively playing for more than
+    /// <see cref="OverLimitAlertMinutes"/> after going over limit — i.e. the automatic
+    /// stop appears to have failed (e.g. a client that ignores the Stop command with hard
+    /// enforcement off). One alert per sitting. Default on.
+    /// </summary>
+    public bool OverLimitAlertEnabled { get; set; }
+
+    /// <summary>
+    /// Gets or sets how many minutes of continued playback past the limit trigger the
+    /// over-limit alert. Default 3.
+    /// </summary>
+    public int OverLimitAlertMinutes { get; set; }
 
     /// <summary>
     /// Gets or sets a value indicating whether one-time first-run seeding has happened.

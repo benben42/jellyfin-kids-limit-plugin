@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Kids Watch-Time</title>
 <style>
-    /* Standalone parent dashboard: the same controls as the Jellyfin admin page, but
-       served straight by the plugin (/KidsLimit/parent?token=...) so it works from any
-       phone browser with only the parent token — no Jellyfin admin login. Mobile-first. */
+    /* Standalone parent app: live dashboard + FULL plugin settings, served straight by the
+       plugin (/KidsLimit/parent?token=...) so it works from any phone browser with only the
+       parent token — no Jellyfin admin login. Mobile-first. */
     :root {
         --bg: #14172e;
         --card: #1e2242;
@@ -24,11 +24,24 @@
     body {
         background: var(--bg); color: var(--ink); min-height: 100vh;
         font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
-        padding: 1em; padding-bottom: 3em; max-width: 46em; margin: 0 auto;
+        padding: 0 1em 6em; max-width: 46em; margin: 0 auto;
     }
-    header { display: flex; align-items: baseline; gap: .6em; flex-wrap: wrap; margin-bottom: .35em; }
-    h1 { font-size: 1.35em; }
-    #status { color: var(--sub); font-size: .8em; }
+    header {
+        position: sticky; top: 0; z-index: 10; background: var(--bg);
+        padding: .8em 0 .6em; margin-bottom: .2em;
+        border-bottom: 1px solid var(--line);
+    }
+    .brand { display: flex; align-items: baseline; gap: .6em; flex-wrap: wrap; margin-bottom: .55em; }
+    h1 { font-size: 1.3em; }
+    #status { color: var(--sub); font-size: .78em; }
+
+    .tabs { display: flex; gap: .3em; background: var(--card); border-radius: 12px; padding: .25em; }
+    .tabBtn {
+        flex: 1 1 0; border: 0; background: transparent; color: var(--sub); font: inherit;
+        padding: .5em .4em; border-radius: 9px; cursor: pointer; font-weight: 600;
+        touch-action: manipulation;
+    }
+    .tabBtn.active { background: var(--accent); color: #221a00; font-weight: 800; }
 
     /* gold coin with a star */
     .coin {
@@ -76,26 +89,284 @@
     button:active { transform: scale(.97); }
     button.ok { background: rgba(46, 204, 113, .25); border-color: rgba(46, 204, 113, .5); }
     button.no { background: rgba(231, 76, 60, .22); border-color: rgba(231, 76, 60, .5); }
+    button.gold { background: var(--accent); color: #221a00; font-weight: 800; border-color: transparent; }
     .btns { display: flex; flex-wrap: wrap; gap: .4em; align-items: center; }
     .kidLink { font-size: .85em; }
     .kidLink a { color: var(--accent); }
     .empty { color: var(--sub); padding: 2em 0; text-align: center; }
 
+    /* ----------------------------------------------------------- settings UI */
+    .secNav {
+        display: flex; gap: .4em; overflow-x: auto; padding: .8em 0 .4em;
+        -webkit-overflow-scrolling: touch; scrollbar-width: none;
+    }
+    .secNav::-webkit-scrollbar { display: none; }
+    .chipBtn {
+        white-space: nowrap; border-radius: 20px; padding: .42em .95em;
+        background: var(--card); border: 1px solid var(--line); color: var(--sub);
+        font-weight: 600; flex: 0 0 auto;
+    }
+    .chipBtn.active { background: var(--accent); color: #221a00; border-color: transparent; font-weight: 800; }
+
+    input[type=text], input[type=number], input[type=date], input[type=time], input[type=url], select {
+        font: inherit; color: var(--ink); background: var(--card2);
+        border: 1px solid var(--line); border-radius: 10px; padding: .5em .6em;
+        width: 100%; min-width: 0; outline: none;
+    }
+    input:focus, select:focus { border-color: var(--accent); }
+    .field { display: flex; flex-direction: column; gap: .25em; flex: 1 1 auto; min-width: 0; }
+    .field > label { font-size: .74em; color: var(--sub); font-weight: 600; letter-spacing: .02em; }
+    .row { display: flex; gap: .55em; flex-wrap: wrap; align-items: flex-end; }
+    .hint { font-size: .78em; color: var(--sub); line-height: 1.4; }
+    .mono { word-break: break-all; font-family: ui-monospace, monospace; font-size: .85em; }
+
+    /* toggle switch */
+    .switch { display: inline-flex; align-items: center; gap: .55em; cursor: pointer; user-select: none; }
+    .switch input { position: absolute; opacity: 0; pointer-events: none; }
+    .switch .knob {
+        width: 2.6em; height: 1.5em; border-radius: 1em; background: rgba(255,255,255,.18);
+        position: relative; transition: background .15s; flex: 0 0 auto;
+    }
+    .switch .knob::after {
+        content: ''; position: absolute; top: .17em; left: .17em; width: 1.16em; height: 1.16em;
+        border-radius: 50%; background: #fff; transition: left .15s;
+    }
+    .switch input:checked + .knob { background: var(--good); }
+    .switch input:checked + .knob::after { left: 1.27em; }
+
+    /* collapsible settings cards */
+    .sCard { background: var(--card); border: 1px solid var(--line); border-radius: 14px; margin-top: .7em; overflow: hidden; }
+    .sHead { display: flex; align-items: center; gap: .6em; padding: .8em 1em; cursor: pointer; user-select: none; }
+    .sHead:active { background: rgba(255,255,255,.04); }
+    .sHeadText { flex: 1 1 auto; min-width: 0; }
+    .sTitle { font-weight: 700; }
+    .sSummary { color: var(--sub); font-size: .78em; margin-top: .15em; }
+    .badge {
+        flex: 0 0 auto; font-size: .68em; font-weight: 700; padding: .2em .65em; border-radius: 1em;
+        background: rgba(255,255,255,.12); color: var(--sub); text-transform: uppercase; letter-spacing: .04em;
+    }
+    .badge.on { background: rgba(46, 204, 113, .22); color: #7ee2a8; }
+    .caret { flex: 0 0 auto; transition: transform .15s ease; opacity: .6; }
+    .sCard.open .caret { transform: rotate(180deg); }
+    .sBody { display: none; padding: .2em 1em 1em; flex-direction: column; gap: .7em; }
+    .sCard.open .sBody { display: flex; }
+    .groupTitle { font-size: .8em; font-weight: 700; color: var(--sub); text-transform: uppercase; letter-spacing: .05em; margin-top: .3em; }
+    .wdGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(7.6em, 1fr)); gap: .45em; }
+
+    .itemRow {
+        display: flex; gap: .5em; align-items: center; flex-wrap: wrap;
+        background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+        padding: .65em .8em; margin-top: .6em;
+    }
+    .itemRow .grow { flex: 1 1 9em; }
+    .itemRow input.tiny { width: 4.2em; flex: 0 0 auto; text-align: center; }
+    .thumbBtn {
+        width: 3.2em; height: 3.2em; padding: 3px; border-radius: 10px; flex: 0 0 auto;
+        display: flex; align-items: center; justify-content: center; overflow: hidden;
+    }
+    .thumbBtn img { width: 100%; height: 100%; object-fit: contain; }
+
+    .secPage h2 { font-size: 1.05em; margin-top: 1em; }
+    .secPage .lead { margin-top: .35em; }
+
+    .saveBar {
+        position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+        display: flex; gap: .6em; align-items: center; justify-content: center;
+        padding: .7em 1em calc(.7em + env(safe-area-inset-bottom));
+        background: rgba(16, 19, 38, .95); backdrop-filter: blur(8px);
+        border-top: 1px solid var(--line);
+    }
+    .saveBar .inner { display: flex; gap: .6em; align-items: center; width: 100%; max-width: 44em; }
+    .saveBar .msg { flex: 1 1 auto; font-size: .85em; color: var(--sub); }
+    .saveBar button { flex: 0 0 auto; min-width: 9em; }
+
+    .modalBack {
+        position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 40;
+        display: flex; align-items: center; justify-content: center; padding: 1em;
+    }
+    .modalBox {
+        background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+        max-width: 34em; width: 100%; max-height: 86vh; overflow: auto; padding: 1.1em;
+    }
+    .clipGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(6.4em, 1fr)); gap: .5em; margin-top: .8em; }
+    .clipOpt {
+        display: flex; flex-direction: column; align-items: center; gap: .3em;
+        padding: .5em .3em; border-radius: 12px;
+    }
+    .clipOpt.sel { outline: 3px solid var(--accent); }
+    .clipOpt img, .clipOpt .ph { width: 3.6em; height: 3.6em; object-fit: contain; display: flex; align-items: center; justify-content: center; font-size: 2em; opacity: .8; }
+    .clipOpt span.lbl { font-size: .68em; color: var(--sub); text-align: center; }
+
     #toast {
-        position: fixed; left: 50%; bottom: 1.2em; transform: translateX(-50%);
+        position: fixed; left: 50%; bottom: 4.6em; transform: translateX(-50%);
         background: #000c; color: #fff; padding: .6em 1.2em; border-radius: 12px;
         font-size: .9em; opacity: 0; transition: opacity .25s ease; pointer-events: none;
-        max-width: 90vw; text-align: center; z-index: 5;
+        max-width: 90vw; text-align: center; z-index: 50;
     }
     #toast.show { opacity: 1; }
 </style>
 </head>
 <body>
     <header>
-        <h1>🧒 Kids Watch-Time</h1>
-        <span id="status">…</span>
+        <div class="brand">
+            <h1>🧒 Kids Watch-Time</h1>
+            <span id="status">…</span>
+        </div>
+        <nav class="tabs">
+            <button type="button" class="tabBtn active" data-view="dash">📊 Dashboard</button>
+            <button type="button" class="tabBtn" data-view="settings">⚙️ Settings</button>
+        </nav>
     </header>
-    <div id="cards"></div>
+
+    <div id="viewDash">
+        <div id="cards"></div>
+    </div>
+
+    <div id="viewSettings" hidden>
+        <nav class="secNav" id="secNav">
+            <button type="button" class="chipBtn active" data-sec="kids">🧒 Kids</button>
+            <button type="button" class="chipBtn" data-sec="presets">🗓️ Presets</button>
+            <button type="button" class="chipBtn" data-sec="chores">🧹 Chores</button>
+            <button type="button" class="chipBtn" data-sec="coins">🪙 Coins</button>
+            <button type="button" class="chipBtn" data-sec="notify">🔔 Alerts</button>
+            <button type="button" class="chipBtn" data-sec="general">🛠️ General</button>
+        </nav>
+        <div id="settingsLoading" class="empty">Loading settings…</div>
+
+        <div class="secPage" data-sec="kids" hidden>
+            <p class="hint lead">Enable limits per kid and assign a preset to each weekday.
+                Users without limits are unlimited adults. Date overrides beat the weekly schedule.</p>
+            <div id="kidsSettings"></div>
+        </div>
+
+        <div class="secPage" data-sec="presets" hidden>
+            <p class="hint lead">Reusable sets of caps (School Day, Weekend, …) that the weekly
+                schedules point at. Leave a cap empty for unlimited.</p>
+            <div id="presetsSettings"></div>
+            <div class="btns" style="margin-top:.8em;">
+                <button type="button" id="btnAddPreset">＋ Add preset</button>
+                <button type="button" id="btnRestorePresets">Restore built-ins</button>
+            </div>
+        </div>
+
+        <div class="secPage" data-sec="chores" hidden>
+            <p class="hint lead">What the kids can earn coins for. Tap the picture to pick clipart
+                for the kid tile; the emoji is the fallback. “/day” caps how often a chore pays (0 = unlimited).</p>
+            <div id="choresSettings"></div>
+            <div class="btns" style="margin-top:.8em;">
+                <button type="button" id="btnAddChore">＋ Add chore</button>
+            </div>
+        </div>
+
+        <div class="secPage" data-sec="coins" hidden>
+            <div class="card">
+                <div class="groupTitle">Coin economy</div>
+                <div class="row">
+                    <div class="field"><label>Minutes per coin</label>
+                        <input type="number" min="1" id="setCoinMinutes" /></div>
+                    <div class="field"><label>Bank cap (0 = ∞)</label>
+                        <input type="number" min="0" id="setBankCap" /></div>
+                    <div class="field"><label>Max redeem / day (0 = ∞)</label>
+                        <input type="number" min="0" id="setMaxRedeem" /></div>
+                </div>
+                <p class="hint">Coins never expire; the bank cap is the only anti-hoarding tool.
+                    The daily redeem cap stops a big bank being spent in one sitting.</p>
+            </div>
+            <div class="card">
+                <div class="groupTitle">Reference titles (kid page “watch” tiles)</div>
+                <p class="hint">The kid spends coins by picking a poster; the price comes from the
+                    item's runtime. Search your library to add titles.</p>
+                <div id="refTitles"></div>
+                <div class="row">
+                    <div class="field" style="flex:1 1 12em;"><label>Search movies &amp; series</label>
+                        <input type="text" id="refSearch" placeholder="e.g. Bluey" /></div>
+                    <button type="button" id="btnRefSearch">Search</button>
+                </div>
+                <div id="refResults"></div>
+            </div>
+        </div>
+
+        <div class="secPage" data-sec="notify" hidden>
+            <div class="card">
+                <div class="groupTitle">Over-limit alert (auto-stop watchdog)</div>
+                <label class="switch"><input type="checkbox" id="setOverLimitAlert" /><span class="knob"></span>
+                    <span>Notify me when a kid keeps watching past their limit</span></label>
+                <div class="row">
+                    <div class="field" style="max-width:14em;"><label>Alert after (minutes over limit)</label>
+                        <input type="number" min="1" id="setOverLimitMinutes" /></div>
+                </div>
+                <p class="hint">If a device ignores the Stop command and playback keeps running this
+                    many minutes past the limit, you get a push notification (to the targets below)
+                    so you know the automatic stop failed. One alert per sitting.</p>
+            </div>
+            <div class="card">
+                <div class="groupTitle">Notification targets</div>
+                <p class="hint">Used for chore-claim pings and the over-limit alert.
+                    <strong>ntfy</strong>: URL = topic URL · <strong>Pushover</strong>: token + user key ·
+                    <strong>Gotify</strong>: URL + app token · <strong>Discord/Slack</strong>: webhook URL ·
+                    <strong>Telegram</strong>: bot token + chat id · <strong>Apprise</strong>: notify endpoint ·
+                    <strong>Webhook</strong>: gets JSON {"title","message"}.</p>
+                <div id="notifyTargets"></div>
+                <div class="btns" style="margin-top:.6em;">
+                    <button type="button" id="btnAddTarget">＋ Add target</button>
+                    <button type="button" id="btnTestNotify">Send test</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="secPage" data-sec="general" hidden>
+            <div class="card">
+                <div class="groupTitle">Time-of-day windows</div>
+                <div class="row">
+                    <div class="field"><label>Morning ends / Afternoon begins</label>
+                        <input type="time" id="setMidday" /></div>
+                    <div class="field"><label>Afternoon ends / Evening begins</label>
+                        <input type="time" id="setEvening" /></div>
+                </div>
+                <p class="hint">Morning = midnight → first cut, Afternoon = between, Evening = last cut → midnight.
+                    Presets can cap each window separately.</p>
+            </div>
+            <div class="card">
+                <div class="groupTitle">Hard enforcement</div>
+                <label class="switch"><input type="checkbox" id="setEnforce" /><span class="knob"></span>
+                    <span>Hard-block kids at the server when over limit</span></label>
+                <div class="field">
+                    <label>Hard-block mode</label>
+                    <select id="setEnforceMode">
+                        <option value="AccessSchedule">Block all access — most forceful</option>
+                        <option value="DisablePlayback">Block playback only — kid can still browse</option>
+                    </select>
+                </div>
+                <p class="hint">Recommended when a client (e.g. Android TV) ignores the Stop command.
+                    Access is restored automatically when back under limit, on bonus, or at midnight.</p>
+            </div>
+            <div class="card">
+                <div class="groupTitle">Addresses &amp; access</div>
+                <div class="field"><label>Public base URL (optional)</label>
+                    <input type="url" id="setPublicBase" placeholder="https://jellyfin.example.com" /></div>
+                <p class="hint">Used for the one-tap approve/decline links in notifications and the
+                    copied page links. Leave blank to use the address each request came in on.</p>
+                <div class="field"><label>Parent API token (this page's key)</label>
+                    <input type="text" id="setApiToken" autocomplete="off" /></div>
+                <div class="btns">
+                    <button type="button" id="btnGenApiToken">Generate new</button>
+                    <button type="button" id="btnCopyParentUrl">Copy parent link</button>
+                </div>
+                <p class="hint">⚠️ Changing the token changes this page's address — after saving, this
+                    page switches to the new token automatically, but old bookmarks stop working.
+                    Leaving it unchanged is always safe; it cannot be emptied from here.</p>
+            </div>
+        </div>
+
+        <div class="saveBar" id="saveBar" hidden>
+            <div class="inner">
+                <span class="msg">Unsaved changes</span>
+                <button type="button" id="btnDiscard">Discard</button>
+                <button type="button" class="gold" id="btnSave">💾 Save</button>
+            </div>
+        </div>
+    </div>
+
     <div id="toast"></div>
 
 <script>
@@ -105,11 +376,39 @@
     var token = new URLSearchParams(location.search).get('token') || '';
     var meta = { Chores: [], Users: [], CoinMinutes: 5 };
     var toastTimer = null;
+    var view = 'dash';
+    var sec = 'kids';
+    var S = null;          // settings snapshot from GET /KidsLimit/settings
+    var dirty = false;
+    var refResolved = {};  // itemId -> {Name, Type, RuntimeMinutes, CoinCost}
 
-    function esc(s) { return (s || '').toString().replace(/[&<>"]/g, function (c) {
+    var NOTIFY_TYPES = ['Ntfy', 'Pushover', 'Gotify', 'Discord', 'Slack', 'Telegram', 'Apprise', 'Webhook'];
+    var WEEKDAYS = [
+        ['MondayPresetId', 'Mon'], ['TuesdayPresetId', 'Tue'], ['WednesdayPresetId', 'Wed'],
+        ['ThursdayPresetId', 'Thu'], ['FridayPresetId', 'Fri'], ['SaturdayPresetId', 'Sat'],
+        ['SundayPresetId', 'Sun']
+    ];
+    var CLIPART = [
+        { key: 'tidy-toys', label: 'Tidy up toys' }, { key: 'make-bed', label: 'Make the bed' },
+        { key: 'clothes-basket', label: 'Clothes basket' }, { key: 'set-table', label: 'Set the table' },
+        { key: 'water-plants', label: 'Water the plants' }, { key: 'books-shelf', label: 'Books on shelf' },
+        { key: 'wipe-table', label: 'Wipe the table' }, { key: 'feed-pet', label: 'Feed the pet' },
+        { key: 'brush-teeth', label: 'Brush your teeth' }, { key: 'help-baby', label: 'Help baby brother' }
+    ];
+    // Mirrors PluginConfiguration.DefaultPresets() server-side.
+    var BUILTIN_PRESETS = [
+        { Id: 'school-day', Name: 'School Day', DailyCapMinutes: 60, SessionCapMinutes: 45, MorningCapMinutes: 0, AfternoonCapMinutes: 30, EveningCapMinutes: 30 },
+        { Id: 'weekend', Name: 'Weekend', DailyCapMinutes: 120, SessionCapMinutes: 60, MorningCapMinutes: 60, AfternoonCapMinutes: null, EveningCapMinutes: 60 },
+        { Id: 'holiday', Name: 'Holiday', DailyCapMinutes: 150, SessionCapMinutes: 90, MorningCapMinutes: null, AfternoonCapMinutes: null, EveningCapMinutes: 60 },
+        { Id: 'recovery-day', Name: 'Recovery Day', DailyCapMinutes: null, SessionCapMinutes: null, MorningCapMinutes: null, AfternoonCapMinutes: null, EveningCapMinutes: null }
+    ];
+
+    function $(id) { return document.getElementById(id); }
+    function esc(s) { return (s === null || s === undefined ? '' : s).toString().replace(/[&<>"]/g, function (c) {
         return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
     function norm(s) { return (s || '').toString().replace(/-/g, '').toLowerCase(); }
     function coin() { return '<span class="coin"></span>'; }
+    function numOrNull(v) { return (v === null || v === undefined || v === '') ? null : (parseInt(v, 10) || 0); }
 
     function fmt(sec) {
         sec = Math.max(0, Math.round(sec || 0));
@@ -117,21 +416,53 @@
         return h > 0 ? h + 'h ' + m + 'm' : m + 'm';
     }
     function capText(min) { return (min === null || min === undefined) ? '∞' : fmt(min * 60); }
+    function capLabel(v) { return (v === null || v === undefined || v === '') ? '∞' : (v + 'm'); }
+    function minutesToTime(mins) {
+        var h = Math.floor((mins || 0) / 60), m = (mins || 0) % 60;
+        return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+    }
+    function timeToMinutes(str) {
+        var parts = (str || '00:00').split(':');
+        return (parseInt(parts[0], 10) || 0) * 60 + (parseInt(parts[1], 10) || 0);
+    }
+    function randHex(bytes) {
+        var arr = new Uint8Array(bytes);
+        (window.crypto || window.msCrypto).getRandomValues(arr);
+        return Array.prototype.map.call(arr, function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+    }
+    function copyText(t) {
+        if (navigator.clipboard) {
+            navigator.clipboard.writeText(t).then(function () { toast('Copied ✓'); }, function () { toast(t); });
+        } else { toast(t); }
+    }
 
     function toast(msg) {
-        var el = document.getElementById('toast');
+        var el = $('toast');
         el.textContent = msg;
         el.classList.add('show');
         if (toastTimer) { clearTimeout(toastTimer); }
-        toastTimer = setTimeout(function () { el.classList.remove('show'); }, 2500);
+        toastTimer = setTimeout(function () { el.classList.remove('show'); }, 2600);
     }
 
     // Served from /KidsLimit/parent, so relative paths hit sibling /KidsLimit/* endpoints.
-    function api(path, method) {
+    function api(path, method, body) {
         var sep = path.indexOf('?') >= 0 ? '&' : '?';
-        return fetch(path + sep + 'token=' + encodeURIComponent(token), { method: method || 'GET' })
+        var opts = { method: method || 'GET' };
+        if (body !== undefined) {
+            opts.headers = { 'Content-Type': 'application/json' };
+            opts.body = JSON.stringify(body);
+        }
+        return fetch(path + sep + 'token=' + encodeURIComponent(token), opts)
             .then(function (r) { if (!r.ok) { throw new Error(r.status); } return r.json(); });
     }
+
+    function publicBase() {
+        var b = S && S.PublicBaseUrl ? S.PublicBaseUrl.replace(/\/+$/, '') : '';
+        if (b) { return b + '/KidsLimit/'; }
+        return new URL('.', new URL('parent', location.href)).href.replace(/\/$/, '') + '/';
+    }
+
+    // ================================================================ dashboard
 
     function barColor(pct) { return pct >= 1 ? 'var(--bad)' : pct >= 0.8 ? 'var(--warn)' : 'var(--good)'; }
 
@@ -147,16 +478,14 @@
     }
 
     // bonusSec: bonus seconds that apply to THIS row (daily, or the active window).
-    // Shown as e.g. "1h 6m / 1h 0m +10b" so being over the base cap is clearly explained
-    // by granted bonus rather than looking like a limit that failed.
     function barRow(label, used, cap, bonusSec) {
         bonusSec = bonusSec || 0;
-        var capLabel = capText(cap);
+        var capLbl = capText(cap);
         if (bonusSec > 0 && cap !== null && cap !== undefined) {
-            capLabel += ' <span class="bonusTag">+' + Math.round(bonusSec / 60) + 'b</span>';
+            capLbl += ' <span class="bonusTag">+' + Math.round(bonusSec / 60) + 'b</span>';
         }
         return '<div class="barRow"><span class="lbl">' + label + '</span>' + bar(used, cap, bonusSec) +
-            '<span class="val">' + fmt(used) + ' / ' + capLabel + '</span></div>';
+            '<span class="val">' + fmt(used) + ' / ' + capLbl + '</span></div>';
     }
 
     function kidLinkFor(userId) {
@@ -236,7 +565,7 @@
     }
 
     function renderWallet(userId, w) {
-        var el = document.getElementById('wallet-' + userId);
+        var el = $('wallet-' + userId);
         if (!el) { return; }
 
         var html = '<div class="coins">' + coin() + ' <strong>' + w.CoinBalance + '</strong>' +
@@ -316,14 +645,14 @@
         api('wallet/' + encodeURIComponent(userId)).then(function (w) {
             renderWallet(userId, w);
         }, function () {
-            var el = document.getElementById('wallet-' + userId);
+            var el = $('wallet-' + userId);
             if (el) { el.textContent = 'Coins unavailable.'; }
         });
     }
 
     function loadHistory(userId) {
         api('history/' + encodeURIComponent(userId) + '?days=7').then(function (hist) {
-            var el = document.getElementById('hist-' + userId);
+            var el = $('hist-' + userId);
             if (!el) { return; }
             if (!hist || !hist.length) { el.textContent = 'No history yet.'; return; }
             var total = hist.reduce(function (a, h) { return a + h.SecondsWatchedTotal; }, 0);
@@ -333,26 +662,656 @@
 
     function load() {
         api('status').then(function (list) {
-            document.getElementById('status').textContent =
+            $('status').textContent =
                 (list.length ? list.length + ' kid(s)' : 'No enabled kids') +
                 ' · updated ' + new Date().toLocaleTimeString();
-            var cards = document.getElementById('cards');
+            var cards = $('cards');
             cards.innerHTML = list.length
                 ? list.map(renderCard).join('')
-                : '<div class="empty">No enabled users. Enable kids in the plugin settings.</div>';
+                : '<div class="empty">No enabled kids yet. Open ⚙️ Settings → Kids to enable limits.</div>';
             wire(cards);
             list.forEach(function (s) { loadHistory(s.UserId); loadWallet(s.UserId); });
         }, function () {
-            document.getElementById('status').textContent = 'Failed to load — check the token in the URL.';
+            $('status').textContent = 'Failed to load — check the token in the URL.';
         });
     }
 
-    api('parent/meta').then(function (m) {
-        meta = m;
+    function loadMeta() {
+        return api('parent/meta').then(function (m) { meta = m; });
+    }
+
+    // ================================================================= settings
+
+    function markDirty() {
+        if (!dirty) {
+            dirty = true;
+            $('saveBar').hidden = false;
+        }
+    }
+
+    function clearDirty() {
+        dirty = false;
+        $('saveBar').hidden = true;
+    }
+
+    function wireCollapsibles(root) {
+        root.querySelectorAll('.sHead').forEach(function (hd) {
+            hd.addEventListener('click', function (e) {
+                if (e.target.closest('input,select,button,a,label')) { return; }
+                this.closest('.sCard').classList.toggle('open');
+            });
+        });
+    }
+
+    function presetOptions(selectedId) {
+        var opts = '<option value="">— none / unlimited —</option>';
+        (S.Presets || []).forEach(function (p) {
+            opts += '<option value="' + esc(p.Id) + '"' +
+                (norm(p.Id) === norm(selectedId) ? ' selected' : '') + '>' + esc(p.Name) + '</option>';
+        });
+        return opts;
+    }
+
+    // ------------------------------------------------------------------- kids
+
+    function findUserCfg(userId) {
+        for (var i = 0; i < (S.Users || []).length; i++) {
+            if (norm(S.Users[i].UserId) === norm(userId)) { return S.Users[i]; }
+        }
+        return null;
+    }
+
+    function kidSummary(cfg) {
+        if (!cfg || !cfg.Enabled) { return 'No limits — unlimited'; }
+        var n = 0;
+        WEEKDAYS.forEach(function (wd) { if (cfg[wd[0]]) { n++; } });
+        return n + '/7 weekdays scheduled' + (cfg.KidToken ? ' · kid page on' : '');
+    }
+
+    function overrideRowHtml(date, presetId) {
+        return '<div class="row ovRow" style="align-items:center;">' +
+            '<input type="date" class="ovDate" value="' + esc(date) + '" style="flex:1 1 8em;" />' +
+            '<select class="ovPreset" style="flex:1 1 8em;">' + presetOptions(presetId) + '</select>' +
+            '<button type="button" class="no btnRmOverride">✗</button></div>';
+    }
+
+    function renderKids(openUserId) {
+        var users = (S.AllUsers && S.AllUsers.length)
+            ? S.AllUsers
+            : (S.Users || []).map(function (u) { return { UserId: u.UserId, Name: u.UserName || u.UserId }; });
+
+        var html = '';
+        users.forEach(function (u) {
+            var cfg = findUserCfg(u.UserId) || {
+                UserId: u.UserId, Enabled: false, WarnMinutesBeforeLimit: 10, KidToken: '', DateOverrides: []
+            };
+            var open = openUserId && norm(openUserId) === norm(u.UserId) ? ' open' : '';
+
+            var weekdayHtml = '';
+            WEEKDAYS.forEach(function (wd) {
+                weekdayHtml += '<div class="field"><label>' + wd[1] + '</label>' +
+                    '<select class="wdSel" data-key="' + wd[0] + '">' + presetOptions(cfg[wd[0]]) + '</select></div>';
+            });
+
+            var overridesHtml = '';
+            (cfg.DateOverrides || []).forEach(function (o) { overridesHtml += overrideRowHtml(o.Date, o.PresetId); });
+
+            html += '<div class="sCard' + open + '" data-userid="' + esc(u.UserId) + '">' +
+                '<div class="sHead"><div class="sHeadText">' +
+                '<div class="sTitle kidTitle">' + esc(u.Name) + '</div>' +
+                '<div class="sSummary">' + esc(kidSummary(cfg)) + '</div></div>' +
+                (cfg.Enabled ? '<span class="badge on">Limited</span>' : '<span class="badge">Unlimited</span>') +
+                '<span class="caret">▾</span></div>' +
+                '<div class="sBody">' +
+                '<label class="switch"><input type="checkbox" class="kidEnabled"' + (cfg.Enabled ? ' checked' : '') +
+                ' /><span class="knob"></span><span>Enable watch-time limits</span></label>' +
+                '<div class="row"><div class="field" style="max-width:12em;"><label>Warn minutes before limit</label>' +
+                '<input type="number" min="0" class="kidWarn" value="' +
+                (cfg.WarnMinutesBeforeLimit != null ? cfg.WarnMinutesBeforeLimit : 10) + '" /></div></div>' +
+                '<div class="groupTitle">Weekly schedule</div>' +
+                '<div class="wdGrid">' + weekdayHtml + '</div>' +
+                '<div class="groupTitle">Date overrides</div>' +
+                '<div class="ovList">' + overridesHtml + '</div>' +
+                '<div class="btns"><button type="button" class="btnAddOverride">＋ Add date override</button></div>' +
+                '<div class="groupTitle">Kid page (rewards)</div>' +
+                '<div class="field"><label>Kid token (empty = kid page off)</label>' +
+                '<input type="text" class="kidToken" value="' + esc(cfg.KidToken || '') + '" /></div>' +
+                '<div class="btns">' +
+                '<button type="button" class="btnGenKidToken">Generate</button>' +
+                '<button type="button" class="btnCopyKidUrl">Copy kid link</button>' +
+                '</div>' +
+                '</div></div>';
+        });
+
+        var container = $('kidsSettings');
+        container.innerHTML = html || '<div class="empty">No Jellyfin users found.</div>';
+        wireCollapsibles(container);
+
+        container.querySelectorAll('.btnAddOverride').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                this.closest('.sBody').querySelector('.ovList')
+                    .insertAdjacentHTML('beforeend', overrideRowHtml('', ''));
+                wireOverrideRemovals(this.closest('.sBody'));
+                markDirty();
+            });
+        });
+        container.querySelectorAll('.sBody').forEach(wireOverrideRemovals);
+
+        container.querySelectorAll('.btnGenKidToken').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                this.closest('.sBody').querySelector('.kidToken').value = randHex(16);
+                markDirty();
+            });
+        });
+        container.querySelectorAll('.btnCopyKidUrl').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var tok = this.closest('.sBody').querySelector('.kidToken').value.trim();
+                if (!tok) { toast('Set a kid token first.'); return; }
+                copyText(publicBase() + 'kid?token=' + encodeURIComponent(tok));
+            });
+        });
+    }
+
+    function wireOverrideRemovals(root) {
+        root.querySelectorAll('.btnRmOverride').forEach(function (btn) {
+            btn.onclick = function () { this.closest('.ovRow').remove(); markDirty(); };
+        });
+    }
+
+    function collectKids() {
+        var result = [];
+        document.querySelectorAll('#kidsSettings [data-userid]').forEach(function (card) {
+            var cfg = {
+                UserId: card.getAttribute('data-userid'),
+                UserName: card.querySelector('.kidTitle').textContent,
+                Enabled: card.querySelector('.kidEnabled').checked,
+                WarnMinutesBeforeLimit: parseInt(card.querySelector('.kidWarn').value, 10) || 0,
+                KidToken: card.querySelector('.kidToken').value.trim(),
+                DateOverrides: []
+            };
+            card.querySelectorAll('.wdSel').forEach(function (sel) {
+                cfg[sel.getAttribute('data-key')] = sel.value;
+            });
+            card.querySelectorAll('.ovRow').forEach(function (row) {
+                var d = row.querySelector('.ovDate').value;
+                var p = row.querySelector('.ovPreset').value;
+                if (d && p) { cfg.DateOverrides.push({ Date: d, PresetId: p }); }
+            });
+            result.push(cfg);
+        });
+        S.Users = result;
+    }
+
+    // ---------------------------------------------------------------- presets
+
+    function presetSummary(p) {
+        return 'Daily ' + capLabel(p.DailyCapMinutes) + ' · Session ' + capLabel(p.SessionCapMinutes) +
+            ' · AM ' + capLabel(p.MorningCapMinutes) + ' · PM ' + capLabel(p.AfternoonCapMinutes) +
+            ' · Eve ' + capLabel(p.EveningCapMinutes);
+    }
+
+    function capFieldHtml(label, key, val) {
+        return '<div class="field"><label>' + label + '</label>' +
+            '<input type="number" min="0" class="pCap" data-key="' + key + '" value="' +
+            (val === null || val === undefined ? '' : val) + '" placeholder="∞" /></div>';
+    }
+
+    function renderPresets(openIdx) {
+        var html = '';
+        (S.Presets || []).forEach(function (p, i) {
+            html += '<div class="sCard' + (i === openIdx ? ' open' : '') + '" data-idx="' + i + '">' +
+                '<div class="sHead"><div class="sHeadText">' +
+                '<div class="sTitle">' + esc(p.Name || 'Preset') + '</div>' +
+                '<div class="sSummary">' + esc(presetSummary(p)) + '</div></div>' +
+                '<span class="caret">▾</span></div>' +
+                '<div class="sBody">' +
+                '<div class="field"><label>Name</label>' +
+                '<input type="text" class="pName" value="' + esc(p.Name) + '" /></div>' +
+                '<div class="row">' +
+                capFieldHtml('Daily (min)', 'DailyCapMinutes', p.DailyCapMinutes) +
+                capFieldHtml('Session (min)', 'SessionCapMinutes', p.SessionCapMinutes) +
+                '</div><div class="row">' +
+                capFieldHtml('Morning', 'MorningCapMinutes', p.MorningCapMinutes) +
+                capFieldHtml('Afternoon', 'AfternoonCapMinutes', p.AfternoonCapMinutes) +
+                capFieldHtml('Evening', 'EveningCapMinutes', p.EveningCapMinutes) +
+                '</div>' +
+                '<div class="btns"><button type="button" class="no btnRmPreset">Remove preset</button></div>' +
+                '</div></div>';
+        });
+        var container = $('presetsSettings');
+        container.innerHTML = html || '<div class="empty">No presets yet — add one, or restore the built-ins.</div>';
+        wireCollapsibles(container);
+
+        container.querySelectorAll('.btnRmPreset').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var idx = parseInt(this.closest('[data-idx]').getAttribute('data-idx'), 10);
+                collectPresets();
+                collectKids();
+                S.Presets.splice(idx, 1);
+                renderPresets();
+                renderKids();
+                markDirty();
+            });
+        });
+    }
+
+    function collectPresets() {
+        document.querySelectorAll('#presetsSettings [data-idx]').forEach(function (card, i) {
+            var p = S.Presets[i];
+            p.Name = card.querySelector('.pName').value.trim() || 'Preset';
+            if (!p.Id) { p.Id = 'preset-' + Date.now() + '-' + i; }
+            card.querySelectorAll('.pCap').forEach(function (inp) {
+                p[inp.getAttribute('data-key')] = numOrNull(inp.value);
+            });
+        });
+    }
+
+    // ----------------------------------------------------------------- chores
+
+    function renderChores() {
+        var html = '';
+        (S.Chores || []).forEach(function (c, i) {
+            var thumb = c.Clipart
+                ? '<img src="clipart/' + esc(c.Clipart) + '" alt="" />'
+                : '<span style="font-size:1.4em;opacity:.55;">🖼️</span>';
+            html += '<div class="itemRow" data-idx="' + i + '">' +
+                '<button type="button" class="thumbBtn btnPickClip" title="Pick a picture">' + thumb + '</button>' +
+                '<input type="text" class="tiny chIcon" value="' + esc(c.Icon) + '" placeholder="🛏️" title="Emoji fallback" />' +
+                '<input type="text" class="grow chName" value="' + esc(c.Name) + '" placeholder="Chore name" />' +
+                '<label style="display:flex;align-items:center;gap:3px;">' + coin() +
+                '<input type="number" min="1" class="tiny chCoins" value="' + (c.Coins || 1) + '" /></label>' +
+                '<label style="display:flex;align-items:center;gap:3px;" title="Max per day (0 = unlimited)">/day' +
+                '<input type="number" min="0" class="tiny chMax" value="' + (c.MaxPerDay != null ? c.MaxPerDay : 1) + '" /></label>' +
+                '<label class="switch" title="Offered"><input type="checkbox" class="chOn"' +
+                (c.Enabled !== false ? ' checked' : '') + ' /><span class="knob"></span></label>' +
+                '<button type="button" class="no btnRmChore">✗</button>' +
+                '</div>';
+        });
+        var container = $('choresSettings');
+        container.innerHTML = html || '<div class="empty">No chores yet.</div>';
+
+        container.querySelectorAll('.btnRmChore').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var idx = parseInt(this.closest('[data-idx]').getAttribute('data-idx'), 10);
+                collectChores();
+                S.Chores.splice(idx, 1);
+                renderChores();
+                markDirty();
+            });
+        });
+        container.querySelectorAll('.btnPickClip').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var idx = parseInt(this.closest('[data-idx]').getAttribute('data-idx'), 10);
+                collectChores();
+                openClipartPicker(idx);
+            });
+        });
+    }
+
+    function collectChores() {
+        document.querySelectorAll('#choresSettings .itemRow').forEach(function (row, i) {
+            var c = S.Chores[i];
+            c.Icon = row.querySelector('.chIcon').value.trim();
+            c.Name = row.querySelector('.chName').value.trim() || 'Chore';
+            c.Coins = parseInt(row.querySelector('.chCoins').value, 10) || 1;
+            c.MaxPerDay = parseInt(row.querySelector('.chMax').value, 10) || 0;
+            c.Enabled = row.querySelector('.chOn').checked;
+            if (!c.Id) { c.Id = 'chore-' + Date.now() + '-' + i; }
+        });
+    }
+
+    function openClipartPicker(idx) {
+        var current = S.Chores[idx] ? S.Chores[idx].Clipart : '';
+        var back = document.createElement('div');
+        back.className = 'modalBack';
+
+        function tile(inner, label, key, sel) {
+            return '<button type="button" class="clipOpt' + (sel ? ' sel' : '') + '" data-key="' + esc(key) + '">' +
+                inner + '<span class="lbl">' + esc(label) + '</span></button>';
+        }
+
+        var opts = tile('<span class="ph">🚫</span>', 'No picture', '', !current);
+        CLIPART.forEach(function (cp) {
+            opts += tile('<img src="clipart/' + cp.key + '" alt="" />', cp.label, cp.key, current === cp.key);
+        });
+
+        back.innerHTML = '<div class="modalBox">' +
+            '<strong>Pick a picture</strong>' +
+            '<div class="hint" style="margin-top:.2em;">Shown on the kid tile.</div>' +
+            '<div class="clipGrid">' + opts + '</div>' +
+            '<div class="btns" style="justify-content:flex-end;margin-top:.9em;">' +
+            '<button type="button" class="btnClipClose">Close</button></div></div>';
+
+        function close() { if (back.parentNode) { back.parentNode.removeChild(back); } }
+        back.addEventListener('click', function (e) { if (e.target === back) { close(); } });
+        back.querySelector('.btnClipClose').addEventListener('click', close);
+        back.querySelectorAll('.clipOpt').forEach(function (opt) {
+            opt.addEventListener('click', function () {
+                if (S.Chores[idx]) { S.Chores[idx].Clipart = this.getAttribute('data-key') || ''; }
+                close();
+                renderChores();
+                markDirty();
+            });
+        });
+        document.body.appendChild(back);
+    }
+
+    // ------------------------------------------------- coins + reference titles
+
+    function refInfoText(id) {
+        var r = refResolved[norm(id)];
+        if (!r) { return id; }
+        return r.Name + ' (' + r.Type + ', ~' + r.RuntimeMinutes + 'm, 🪙' + r.CoinCost + ')';
+    }
+
+    function renderRefTitles() {
+        var html = '';
+        (S.ReferenceItemIds || []).forEach(function (id, i) {
+            html += '<div class="itemRow" style="margin-top:.4em;">' +
+                '<span class="grow">' + esc(refInfoText(id)) + '</span>' +
+                '<button type="button" class="no btnRmRef" data-idx="' + i + '">✗</button></div>';
+        });
+        var container = $('refTitles');
+        container.innerHTML = html || '<div class="hint">No reference titles yet — search below.</div>';
+        container.querySelectorAll('.btnRmRef').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                S.ReferenceItemIds.splice(parseInt(this.getAttribute('data-idx'), 10), 1);
+                renderRefTitles();
+                markDirty();
+            });
+        });
+    }
+
+    function resolveRefTitles() {
+        if (!S.ReferenceItemIds || !S.ReferenceItemIds.length) { return; }
+        api('items/resolve?ids=' + encodeURIComponent(S.ReferenceItemIds.join(','))).then(function (list) {
+            list.forEach(function (r) { refResolved[norm(r.ItemId)] = r; });
+            renderRefTitles();
+        }, function () {});
+    }
+
+    function searchRefTitles() {
+        var q = $('refSearch').value.trim();
+        var out = $('refResults');
+        if (!q) { return; }
+        out.innerHTML = '<div class="hint">Searching…</div>';
+        api('items/search?q=' + encodeURIComponent(q)).then(function (list) {
+            if (!list.length) { out.innerHTML = '<div class="hint">No matches.</div>'; return; }
+            out.innerHTML = list.map(function (r) {
+                refResolved[norm(r.ItemId)] = r;
+                var added = (S.ReferenceItemIds || []).some(function (id) { return norm(id) === norm(r.ItemId); });
+                return '<div class="itemRow" style="margin-top:.4em;">' +
+                    '<span class="grow">' + esc(refInfoText(r.ItemId)) + '</span>' +
+                    (added ? '<span class="hint">added</span>'
+                        : '<button type="button" class="ok btnAddRef" data-id="' + esc(r.ItemId) + '">＋ Add</button>') +
+                    '</div>';
+            }).join('');
+            out.querySelectorAll('.btnAddRef').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    S.ReferenceItemIds.push(this.getAttribute('data-id'));
+                    renderRefTitles();
+                    searchRefTitles();
+                    markDirty();
+                });
+            });
+        }, function () {
+            out.innerHTML = '<div class="hint">Search failed.</div>';
+        });
+    }
+
+    // ---------------------------------------------------- notification targets
+
+    function renderTargets() {
+        var html = '';
+        (S.NotificationTargets || []).forEach(function (t, i) {
+            var opts = NOTIFY_TYPES.map(function (n) {
+                return '<option value="' + n + '"' + (t.Type === n ? ' selected' : '') + '>' + n + '</option>';
+            }).join('');
+            html += '<div class="itemRow" data-idx="' + i + '">' +
+                '<select class="ntType" style="flex:0 1 7.5em;">' + opts + '</select>' +
+                '<input type="text" class="grow ntUrl" value="' + esc(t.Url) + '" placeholder="URL" />' +
+                '<input type="text" class="ntToken" value="' + esc(t.Token) + '" placeholder="token" style="flex:1 1 7em;" />' +
+                '<input type="text" class="ntUser" value="' + esc(t.UserKey) + '" placeholder="user / chat id" style="flex:1 1 7em;" />' +
+                '<label class="switch" title="Enabled"><input type="checkbox" class="ntOn"' +
+                (t.Enabled !== false ? ' checked' : '') + ' /><span class="knob"></span></label>' +
+                '<button type="button" class="no btnRmTarget">✗</button>' +
+                '</div>';
+        });
+        var container = $('notifyTargets');
+        container.innerHTML = html || '<div class="hint">No targets yet — chore claims and over-limit alerts will not ping your phone.</div>';
+        container.querySelectorAll('.btnRmTarget').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var idx = parseInt(this.closest('[data-idx]').getAttribute('data-idx'), 10);
+                collectTargets();
+                S.NotificationTargets.splice(idx, 1);
+                renderTargets();
+                markDirty();
+            });
+        });
+    }
+
+    function collectTargets() {
+        document.querySelectorAll('#notifyTargets .itemRow').forEach(function (row, i) {
+            var t = S.NotificationTargets[i];
+            t.Type = row.querySelector('.ntType').value;
+            t.Url = row.querySelector('.ntUrl').value.trim();
+            t.Token = row.querySelector('.ntToken').value.trim();
+            t.UserKey = row.querySelector('.ntUser').value.trim();
+            t.Enabled = row.querySelector('.ntOn').checked;
+        });
+    }
+
+    // ---------------------------------------------------------- general + save
+
+    function fillScalarFields() {
+        $('setMidday').value = minutesToTime(S.MiddayStartMinutes || 720);
+        $('setEvening').value = minutesToTime(S.EveningStartMinutes || 1080);
+        $('setPublicBase').value = S.PublicBaseUrl || '';
+        $('setApiToken').value = S.BonusApiToken || '';
+        $('setEnforce').checked = !!S.EnforceViaAccessSchedule;
+        $('setEnforceMode').value = S.HardEnforcementMode === 'DisablePlayback' ? 'DisablePlayback' : 'AccessSchedule';
+        $('setOverLimitAlert').checked = S.OverLimitAlertEnabled !== false;
+        $('setOverLimitMinutes').value = S.OverLimitAlertMinutes > 0 ? S.OverLimitAlertMinutes : 3;
+        $('setCoinMinutes').value = S.CoinMinutes || 5;
+        $('setBankCap').value = S.BankCapCoins != null ? S.BankCapCoins : 24;
+        $('setMaxRedeem').value = S.MaxRedeemCoinsPerDay != null ? S.MaxRedeemCoinsPerDay : 6;
+    }
+
+    function renderAllSettings() {
+        $('settingsLoading').hidden = true;
+        fillScalarFields();
+        renderKids();
+        renderPresets();
+        renderChores();
+        renderTargets();
+        renderRefTitles();
+        resolveRefTitles();
+        showSec(sec);
+    }
+
+    function buildPayload() {
+        collectPresets();
+        collectKids();
+        collectChores();
+        collectTargets();
+        return {
+            MiddayStartMinutes: timeToMinutes($('setMidday').value),
+            EveningStartMinutes: timeToMinutes($('setEvening').value),
+            BonusApiToken: $('setApiToken').value.trim(),
+            PublicBaseUrl: $('setPublicBase').value.trim(),
+            EnforceViaAccessSchedule: $('setEnforce').checked,
+            HardEnforcementMode: $('setEnforceMode').value,
+            OverLimitAlertEnabled: $('setOverLimitAlert').checked,
+            OverLimitAlertMinutes: parseInt($('setOverLimitMinutes').value, 10) || 3,
+            CoinMinutes: parseInt($('setCoinMinutes').value, 10) || 5,
+            BankCapCoins: parseInt($('setBankCap').value, 10) || 0,
+            MaxRedeemCoinsPerDay: parseInt($('setMaxRedeem').value, 10) || 0,
+            Presets: S.Presets,
+            Users: S.Users,
+            Chores: S.Chores,
+            NotificationTargets: S.NotificationTargets,
+            ReferenceItemIds: S.ReferenceItemIds
+        };
+    }
+
+    function save() {
+        var btn = $('btnSave');
+        btn.disabled = true;
+        api('settings', 'POST', buildPayload()).then(function (saved) {
+            btn.disabled = false;
+            // A token change moves this page's address: adopt the new token in place.
+            if (saved.BonusApiToken && saved.BonusApiToken !== token) {
+                token = saved.BonusApiToken;
+                try {
+                    history.replaceState(null, '', 'parent?token=' + encodeURIComponent(token));
+                } catch (e) { /* ignore */ }
+                toast('Saved ✓ — token changed, update your bookmark!');
+            } else {
+                toast('Saved ✓');
+            }
+            S = saved;
+            clearDirty();
+            renderAllSettings();
+            loadMeta().then(load, load); // chores / kid links may have changed
+        }, function () {
+            btn.disabled = false;
+            toast('Save failed — check the values and try again.');
+        });
+    }
+
+    function loadSettings(force) {
+        if (S && !force) { return; }
+        $('settingsLoading').hidden = false;
+        api('settings').then(function (s) {
+            S = s;
+            clearDirty();
+            renderAllSettings();
+        }, function () {
+            $('settingsLoading').textContent = 'Failed to load settings — check the token.';
+            $('settingsLoading').hidden = false;
+        });
+    }
+
+    // ------------------------------------------------------------- navigation
+
+    function showView(name) {
+        view = name;
+        $('viewDash').hidden = name !== 'dash';
+        $('viewSettings').hidden = name !== 'settings';
+        document.querySelectorAll('.tabBtn').forEach(function (b) {
+            b.classList.toggle('active', b.getAttribute('data-view') === name);
+        });
+        if (name === 'settings') {
+            loadSettings(false);
+            $('saveBar').hidden = !dirty;
+        } else {
+            $('saveBar').hidden = true;
+        }
+    }
+
+    function showSec(name) {
+        sec = name;
+        document.querySelectorAll('.secPage').forEach(function (p) {
+            p.hidden = S === null || p.getAttribute('data-sec') !== name;
+        });
+        document.querySelectorAll('#secNav .chipBtn').forEach(function (b) {
+            b.classList.toggle('active', b.getAttribute('data-sec') === name);
+        });
+    }
+
+    // ------------------------------------------------------------------ wiring
+
+    document.querySelectorAll('.tabBtn').forEach(function (b) {
+        b.addEventListener('click', function () { showView(this.getAttribute('data-view')); });
+    });
+    document.querySelectorAll('#secNav .chipBtn').forEach(function (b) {
+        b.addEventListener('click', function () { showSec(this.getAttribute('data-sec')); });
+    });
+
+    // Any edit inside the settings view marks the config dirty — except the library
+    // search box, which is not part of the config.
+    function onSettingsEdit(e) {
+        if (e && e.target && e.target.id === 'refSearch') { return; }
+        markDirty();
+    }
+    $('viewSettings').addEventListener('input', onSettingsEdit);
+    $('viewSettings').addEventListener('change', onSettingsEdit);
+
+    $('btnSave').addEventListener('click', save);
+    $('btnDiscard').addEventListener('click', function () {
+        if (confirm('Discard unsaved changes?')) { loadSettings(true); }
+    });
+
+    $('btnAddPreset').addEventListener('click', function () {
+        collectPresets();
+        collectKids();
+        S.Presets.push({ Id: '', Name: 'New preset', DailyCapMinutes: null, SessionCapMinutes: null,
+            MorningCapMinutes: null, AfternoonCapMinutes: null, EveningCapMinutes: null });
+        renderPresets(S.Presets.length - 1);
+        renderKids();
+        markDirty();
+    });
+    $('btnRestorePresets').addEventListener('click', function () {
+        collectPresets();
+        collectKids();
+        BUILTIN_PRESETS.forEach(function (bp) {
+            var exists = S.Presets.some(function (p) { return norm(p.Id) === norm(bp.Id); });
+            if (!exists) { S.Presets.push(JSON.parse(JSON.stringify(bp))); }
+        });
+        renderPresets();
+        renderKids();
+        markDirty();
+    });
+
+    $('btnAddChore').addEventListener('click', function () {
+        collectChores();
+        S.Chores.push({ Id: '', Name: '', Icon: '', Clipart: '', Coins: 1, MaxPerDay: 1, Enabled: true });
+        renderChores();
+        markDirty();
+    });
+
+    $('btnAddTarget').addEventListener('click', function () {
+        collectTargets();
+        S.NotificationTargets.push({ Type: 'Ntfy', Url: '', Token: '', UserKey: '', Enabled: true });
+        renderTargets();
+        markDirty();
+    });
+    $('btnTestNotify').addEventListener('click', function () {
+        if (dirty) { toast('Save first — the test uses the saved targets.'); return; }
+        api('notify/test', 'POST').then(function (r) {
+            toast('Test sent: ' + r.Succeeded + '/' + r.Attempted + ' target(s) succeeded.' +
+                (r.Attempted === 0 ? ' No enabled targets saved yet.' : ''));
+        }, function () { toast('Test failed.'); });
+    });
+
+    $('btnRefSearch').addEventListener('click', searchRefTitles);
+    $('refSearch').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); searchRefTitles(); }
+    });
+
+    $('btnGenApiToken').addEventListener('click', function () {
+        if (confirm('Generate a new parent token? After saving, this page\'s address changes ' +
+            'and old bookmarks / shortcuts stop working.')) {
+            $('setApiToken').value = randHex(24);
+            markDirty();
+        }
+    });
+    $('btnCopyParentUrl').addEventListener('click', function () {
+        var tok = $('setApiToken').value.trim() || token;
+        copyText(publicBase() + 'parent?token=' + encodeURIComponent(tok));
+    });
+
+    window.addEventListener('beforeunload', function (e) {
+        if (dirty) { e.preventDefault(); e.returnValue = ''; }
+    });
+
+    // -------------------------------------------------------------------- boot
+
+    loadMeta().then(function () {
         load();
-        setInterval(load, 15000);
+        setInterval(function () { if (view === 'dash') { load(); } }, 15000);
     }, function () {
-        document.getElementById('status').textContent = 'Unauthorized — check the token in the URL.';
+        $('status').textContent = 'Unauthorized — check the token in the URL.';
     });
 })();
 </script>

@@ -143,6 +143,13 @@ description, and target ABI used in the manifest.
 - **Per-user limits** — each kid is a collapsible card: enable them, assign a
   preset to each weekday, add date overrides (sick day / holiday), and set the
   warn-minutes threshold. Users left disabled are unlimited adults.
+- **Over-limit alert** — when a kid keeps actively playing more than N minutes
+  (default 3) past their limit — i.e. the automatic stop failed, e.g. a client
+  that ignores the Stop command with hard enforcement off — a push notification
+  is sent to the configured notification targets. One alert per sitting.
+
+Everything above can also be edited from the standalone parent page (below)
+under **⚙️ Settings** — no Jellyfin admin login needed, just the parent token.
 
 ## Parent dashboard
 
@@ -204,6 +211,8 @@ Auth is the shared token via `?token=` or the `X-KidsLimit-Token` header.
 | `POST` | `/KidsLimit/claims/reject?user=&claimId=&token=` | Reject a kid's chore claim |
 | `GET`  | `/KidsLimit/items/search?q=&token=` | Library search for reference titles |
 | `POST` | `/KidsLimit/notify/test?token=` | Send a test push to all notification targets |
+| `GET`  | `/KidsLimit/settings?token=` | Full plugin configuration + all Jellyfin users |
+| `POST` | `/KidsLimit/settings?token=` | Replace the plugin configuration (parent settings page) |
 
 Kid self-service endpoints (`/KidsLimit/kid…`) use the per-user kid token
 instead and only allow viewing the own wallet, claiming a chore and redeeming
