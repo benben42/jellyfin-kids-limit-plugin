@@ -381,9 +381,14 @@ public sealed class RewardsService
 
     /// <summary>
     /// Midnight-rollover handler: refunds redeemed-but-unwatched seconds back to the
-    /// wallet as whole coins. Consumption is attributed to parent-granted bonus first
-    /// (generous to the kid); see REWARDS.md for the formula. Invoked from the state
-    /// store's rollover under its lock — must not call back into <see cref="StateStore"/>.
+    /// wallet as whole coins. Bonus consumption is tracked live by the tracker against
+    /// ALL cap families (daily, window, session) via
+    /// <see cref="DailyState.BonusConsumedSeconds"/>, so time that was only usable
+    /// because of the bonus never refunds — including on presets with window caps but no
+    /// daily cap, where the old daily-cap-only formula refunded everything. Consumption
+    /// is attributed to parent-granted bonus first (generous to the kid); see REWARDS.md.
+    /// Invoked from the state store's rollover under its lock — must not call back into
+    /// <see cref="StateStore"/>.
     /// </summary>
     /// <param name="finished">Snapshot of the finishing day.</param>
     public void RefundFinishedDay(DailyState finished)
@@ -396,7 +401,10 @@ public sealed class RewardsService
                 return;
             }
 
-            long unusedBonus;
+            // Floor the tracked consumption with the daily-cap overage: a day tracked by
+            // an older plugin version has 0 in BonusConsumedSeconds, and the overage is
+            // provable consumption regardless of tracking.
+            var bonusConsumed = finished.BonusConsumedSeconds;
             var cfg = Plugin.Instance?.FindUser(finished.UserId);
             var preset = cfg is null || !DateTime.TryParseExact(
                     finished.Date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day)
@@ -405,15 +413,12 @@ public sealed class RewardsService
 
             if (preset?.DailyCapMinutes is int dailyCap)
             {
-                var bonusConsumed = Math.Max(0, finished.SecondsWatchedTotal - (dailyCap * 60L));
-                unusedBonus = Math.Max(0, finished.DailyBonusSeconds - bonusConsumed);
-            }
-            else
-            {
-                // No daily cap => the bonus was never needed; refund everything redeemed.
-                unusedBonus = finished.RedeemedSeconds;
+                bonusConsumed = Math.Max(
+                    bonusConsumed,
+                    Math.Max(0, finished.SecondsWatchedTotal - (dailyCap * 60L)));
             }
 
+            var unusedBonus = Math.Max(0, finished.DailyBonusSeconds - bonusConsumed);
             var refundSeconds = Math.Min(finished.RedeemedSeconds, unusedBonus);
 
             // Round the refund UP to whole coins: any unwatched fraction of a coin's worth

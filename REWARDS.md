@@ -44,14 +44,23 @@ remote (D-pad). Everything is pictures, emoji, counts and sounds.
 - **Plain extra time**: ⏳ tiles (1 or 3 coins) redeem coins into bonus time with
   no title attached — for finishing whatever is already playing on the TV.
 - **Redeemed time behaves like bonus time** (§5.1): it lifts daily, session and
-  the currently-active window budget. The evening window boundary itself is not
-  moved — the plugin never had a hard bedtime cutoff, only window caps.
+  the currently-active window budget — but as **one day-wide pool**. A playing
+  second that exceeds any base cap drains the pool by one second (exactly once,
+  even when it exceeds several caps at the same moment); what one window or one
+  sitting consumed is no longer available to the others. So 3 coins are 15
+  extra minutes for the day, not 15 per window. The evening window boundary
+  itself is not moved — the plugin never had a hard bedtime cutoff, only window
+  caps.
 - **Midnight refund**: redeemed-but-unwatched seconds return to the wallet at
   rollover. Consumption is attributed to parent-granted bonus first (generous to
-  the kid). Formula: `refund = min(redeemedToday, max(0, dailyBonus − max(0,
-  watched − dailyCap)))`; with no daily cap the whole redeemed amount refunds.
-  Refunded seconds are converted back to whole coins (floor); the remainder is
-  forgiven (never silently drops a full coin).
+  the kid). Formula: `refund = min(redeemedToday, max(0, dailyBonus −
+  bonusConsumed))`, where `bonusConsumed` is the pool drain tracked live against
+  ALL cap families (daily, window, session) — time that was only watchable
+  because of the bonus never refunds, including on presets with window caps but
+  no daily cap. Refunded seconds are converted back to whole coins rounding
+  **up**: a coin whose time was only partly watched comes back in full
+  (deliberately generous; the rounding can never mint more coins than were
+  redeemed).
 - **Claims**: require approval by default. A chore at its `MaxPerDay` (approved +
   pending for today) shows as done and cannot be claimed again.
 - **Coins do not unblock by themselves** — only *redeeming* grants time (and

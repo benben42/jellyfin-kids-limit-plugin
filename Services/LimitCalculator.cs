@@ -61,6 +61,60 @@ public static class LimitCalculator
     }
 
     /// <summary>
+    /// The bonus seconds a given cap may still draw on. Bonus is one day-wide pool
+    /// (<see cref="DailyState.BonusConsumedSeconds"/>): what other caps' overages already
+    /// consumed is gone. The cap's OWN overage is excluded from the consumed amount
+    /// because it already sits inside <paramref name="used"/> — subtracting it again
+    /// would count the same seconds twice.
+    /// </summary>
+    /// <param name="state">The user's daily state.</param>
+    /// <param name="pool">The bonus pool the cap draws on.</param>
+    /// <param name="capSeconds">The cap's base budget in seconds.</param>
+    /// <param name="used">Seconds already counted against this cap.</param>
+    /// <returns>Bonus seconds still applicable to this cap.</returns>
+    public static long AvailableBonus(DailyState state, long pool, long capSeconds, long used)
+    {
+        var ownOverage = Math.Max(0, used - capSeconds);
+        var consumedElsewhere = Math.Max(0, state.BonusConsumedSeconds - ownOverage);
+        return Math.Max(0, pool - consumedElsewhere);
+    }
+
+    /// <summary>
+    /// Remaining seconds under the BASE caps only — no bonus applied. Used by the tracker
+    /// to detect which watched seconds are running on bonus (and must drain the pool).
+    /// </summary>
+    /// <param name="preset">The active preset (null = unlimited).</param>
+    /// <param name="state">The user's daily state.</param>
+    /// <param name="window">The current window.</param>
+    /// <param name="sessionSeconds">Seconds watched by the session being evaluated.</param>
+    /// <returns>The most-restrictive base remaining, <see cref="long.MaxValue"/> when no cap applies. May be negative.</returns>
+    public static long BaseRemaining(Preset? preset, DailyState state, Window window, long sessionSeconds)
+    {
+        if (preset is null)
+        {
+            return long.MaxValue;
+        }
+
+        var best = long.MaxValue;
+        if (preset.SessionCapMinutes is int sc)
+        {
+            best = Math.Min(best, (sc * 60L) - sessionSeconds);
+        }
+
+        if (preset.DailyCapMinutes is int dc)
+        {
+            best = Math.Min(best, (dc * 60L) - state.SecondsWatchedTotal);
+        }
+
+        if (WindowCap(preset, window) is int wc)
+        {
+            best = Math.Min(best, (wc * 60L) - state.GetWindowSeconds(window));
+        }
+
+        return best;
+    }
+
+    /// <summary>
     /// Computes remaining playable seconds for a session, honoring the most-restrictive
     /// of the applicable (non-null) session / daily / window caps, plus bonus.
     /// </summary>
@@ -86,7 +140,8 @@ public static class LimitCalculator
                 return;
             }
 
-            var remaining = ((long)capMinutes.Value * 60) + bonus - used;
+            var capSeconds = (long)capMinutes.Value * 60;
+            var remaining = capSeconds + AvailableBonus(state, bonus, capSeconds, used) - used;
             if (best is null || remaining < best.Value)
             {
                 best = remaining;
@@ -94,7 +149,12 @@ public static class LimitCalculator
             }
         }
 
-        // Bonus applies to daily, session, AND the currently-active window (§5.1).
+        // Bonus applies to daily, session, AND the currently-active window (§5.1) — but as
+        // ONE shared pool: a bonus second consumed in the morning window (or an earlier
+        // sitting) is no longer available to the afternoon/evening windows or later
+        // sittings. Without the pool accounting, one 3-coin redeem would lift each of the
+        // three windows by the full 15 minutes (up to 45 free minutes on window-cap-only
+        // presets).
         Consider(preset.SessionCapMinutes, sessionSeconds, state.SessionBonusSeconds, "session");
         Consider(preset.DailyCapMinutes, state.SecondsWatchedTotal, state.DailyBonusSeconds, "daily");
         Consider(

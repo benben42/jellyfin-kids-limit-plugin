@@ -54,6 +54,19 @@ public class DailyState
     public long RedeemedSeconds { get; set; }
 
     /// <summary>
+    /// Gets or sets how many seconds of <see cref="DailyBonusSeconds"/> have been consumed
+    /// today. Bonus is one day-wide pool: a playing second that exceeds any applicable BASE
+    /// cap (daily, session, or the active window — without bonus) drains the pool by one
+    /// second, exactly once, even when it exceeds several caps at the same time. This is
+    /// what stops a single redeem from being re-applied in full to every window (or every
+    /// sitting) and lets the midnight refund see how much redeemed time was really used.
+    /// Maintained by the tracker; capped at the pool size so time watched while over limit
+    /// with no bonus available ("stolen" time on clients that ignore Stop) does not eat
+    /// bonus granted later.
+    /// </summary>
+    public long BonusConsumedSeconds { get; set; }
+
+    /// <summary>
     /// Gets or sets a value indicating whether a parent forced an immediate stop via the
     /// dashboard ("Stop now"). While set, the user is hard-blocked for the rest of the day
     /// regardless of remaining budget. Cleared by granting bonus, the Allow endpoint, or the
