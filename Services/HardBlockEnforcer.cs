@@ -183,23 +183,33 @@ public sealed class HardBlockEnforcer
         // instant the window opens, or the account is hard-blocked (and, in AccessSchedule
         // mode, cannot even log in) for the whole window despite zero watch time.
         //
-        // Daily bonus applies to both the daily and the active-window budgets (§5.1). The
-        // session cap is deliberately excluded: a session-cap breach is a "take a break"
-        // signal, not a "you're done for the day", so it shouldn't lock the whole account.
-        if (preset.DailyCapMinutes is int daily &&
-            state.SecondsWatchedTotal > 0 &&
-            state.SecondsWatchedTotal >= (long)daily * 60 + state.DailyBonusSeconds)
+        // Daily bonus applies to both the daily and the active-window budgets (§5.1), but
+        // as the same day-wide pool the tracker drains (AvailableBonus) — the full bonus
+        // must not be re-applied to each window. The session cap is deliberately excluded:
+        // a session-cap breach is a "take a break" signal, not a "you're done for the
+        // day", so it shouldn't lock the whole account.
+        if (preset.DailyCapMinutes is int daily && state.SecondsWatchedTotal > 0)
         {
-            return true;
+            var capSeconds = (long)daily * 60;
+            var bonus = LimitCalculator.AvailableBonus(
+                state, state.DailyBonusSeconds, capSeconds, state.SecondsWatchedTotal);
+            if (state.SecondsWatchedTotal >= capSeconds + bonus)
+            {
+                return true;
+            }
         }
 
         var windowCap = LimitCalculator.WindowCap(preset, window);
         var windowSeconds = state.GetWindowSeconds(window);
-        if (windowCap is int wc &&
-            windowSeconds > 0 &&
-            windowSeconds >= (long)wc * 60 + state.DailyBonusSeconds)
+        if (windowCap is int wc && windowSeconds > 0)
         {
-            return true;
+            var capSeconds = (long)wc * 60;
+            var bonus = LimitCalculator.AvailableBonus(
+                state, state.DailyBonusSeconds, capSeconds, windowSeconds);
+            if (windowSeconds >= capSeconds + bonus)
+            {
+                return true;
+            }
         }
 
         return false;

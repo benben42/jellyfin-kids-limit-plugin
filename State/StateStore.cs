@@ -284,6 +284,7 @@ public class StateStore
         state.DailyBonusSeconds = 0;
         state.SessionBonusSeconds = 0;
         state.RedeemedSeconds = 0;
+        state.BonusConsumedSeconds = 0;
         state.ManuallyStopped = false;
 
         // Keep active sessions but reset their per-day counters/flags.
@@ -378,6 +379,7 @@ public class StateStore
         DailyBonusSeconds = s.DailyBonusSeconds,
         SessionBonusSeconds = s.SessionBonusSeconds,
         RedeemedSeconds = s.RedeemedSeconds,
+        BonusConsumedSeconds = s.BonusConsumedSeconds,
         ManuallyStopped = s.ManuallyStopped,
         ActiveSessions = s.ActiveSessions.ToDictionary(
             kv => kv.Key,

@@ -227,6 +227,19 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
 
                 if (delta > 0)
                 {
+                    // Seconds beyond the BASE caps are running on bonus: drain the
+                    // day-wide pool by that much, exactly once, before crediting — so a
+                    // redeem lifts the caps by its worth in total, not once per window
+                    // and per sitting. Capped at the pool so time watched while blocked
+                    // with no bonus (clients ignoring Stop) can't eat future grants.
+                    var baseRemaining = LimitCalculator.BaseRemaining(preset, dailyState, window, ss.SecondsWatched);
+                    var overBase = delta - Math.Clamp(baseRemaining, 0L, delta);
+                    if (overBase > 0)
+                    {
+                        var pool = Math.Max(0, dailyState.DailyBonusSeconds - dailyState.BonusConsumedSeconds);
+                        dailyState.BonusConsumedSeconds += Math.Min(overBase, pool);
+                    }
+
                     ss.SecondsWatched += delta;
                     dailyState.SecondsWatchedTotal += delta;
                     dailyState.AddWindowSeconds(window, delta);
