@@ -68,9 +68,10 @@ makes the set better or just longer. Eight to ten tiles fill one D-pad grid with
 
 ## 3. Making the picture
 
-Use the `STYLE` block in [`CHORE-IMAGE-PROMPTS.md §2`](CHORE-IMAGE-PROMPTS.md) **verbatim** —
-it is what holds the set together — plus a one-sentence `SUBJECT` for the new chore and a flat
-pastel background color not already used by a neighbouring tile (§3 lists the nine in use).
+Copy any of the nine prompts in [`CHORE-IMAGE-PROMPTS.md §2`](CHORE-IMAGE-PROMPTS.md) and
+change only two things: the subject sentence at the top, and the background colour. Leave the
+style, lighting and composition wording **exactly as it is** — that is what holds the set
+together. Pick a pastel not adjacent to the nine already in use (listed in §3).
 
 Then:
 
@@ -82,7 +83,7 @@ oxipng -o4 --strip safe Web/clipart/<key>.png
 Full-bleed square, under ~120 KB. Corners are rounded by CSS on the kid page — don't attempt
 transparent rounded corners in the image.
 
-Append the new prompt to `CHORE-IMAGE-PROMPTS.md §3` so the set stays reproducible.
+Append the new prompt, in full, to `CHORE-IMAGE-PROMPTS.md §2` so the set stays reproducible.
 
 ---
 
