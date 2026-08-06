@@ -261,6 +261,15 @@
                     <button is="emby-button" type="button" id="btnAddChore" class="raised">
                         <span>Add chore</span>
                     </button>
+                    <button is="emby-button" type="button" id="btnAddSuggestedChores" class="raised button-cancel">
+                        <span>Add suggested chores</span>
+                    </button>
+                    <div class="fieldDescription">
+                        "Add suggested chores" adds the nine built-in chores for a 6-year-old
+                        (bed, laundry basket, plate in the sink, room, dishwasher, craft table,
+                        clean clothes, playing with a little brother, reading to him), already
+                        priced and matched to their pictures. It never creates duplicates.
+                    </div>
                 </div>
 
                 <div class="verticalSection">
@@ -303,20 +312,31 @@
 
         var NOTIFY_TYPES = ['Ntfy', 'Pushover', 'Gotify', 'Discord', 'Slack', 'Telegram', 'Apprise', 'Webhook'];
 
-        // Built-in placeholder clipart. Keys mirror Web/clipart/*.svg and ChoreClipart.Keys;
-        // served at /KidsLimit/clipart/{key}. Shown on the kid tile when a chore has no photo.
-        var CLIPART = [
-            { key: 'tidy-toys', label: 'Tidy up toys' },
-            { key: 'make-bed', label: 'Make the bed' },
-            { key: 'clothes-basket', label: 'Clothes in the basket' },
-            { key: 'set-table', label: 'Set the table' },
-            { key: 'water-plants', label: 'Water the plants' },
-            { key: 'books-shelf', label: 'Books on the shelf' },
-            { key: 'wipe-table', label: 'Wipe the table' },
-            { key: 'feed-pet', label: 'Feed the pet' },
-            { key: 'brush-teeth', label: 'Brush your teeth' },
-            { key: 'help-baby', label: 'Help baby brother' }
+        // Built-in chore art, loaded from GET /KidsLimit/clipart — the server lists only the
+        // keys that actually have a file embedded, so art can be added by dropping a picture
+        // into Web/clipart without touching this page. Entries: { Key, Label, Style }.
+        var CLIPART = [];
+
+        // Mirrors PluginConfiguration.DefaultChores() server-side — used by the
+        // "Add suggested chores" button to add any that are missing.
+        var SUGGESTED_CHORES = [
+            { Id: 'make-bed', Name: 'Make your bed', Icon: '🛏️', Clipart: 'make-bed', Coins: 1, MaxPerDay: 1 },
+            { Id: 'clothes-basket', Name: 'Dirty clothes in the basket', Icon: '🧺', Clipart: 'clothes-basket', Coins: 1, MaxPerDay: 1 },
+            { Id: 'plate-in-sink', Name: 'Put your plate in the sink', Icon: '🍽️', Clipart: 'plate-in-sink', Coins: 1, MaxPerDay: 3 },
+            { Id: 'tidy-toys', Name: 'Tidy your room', Icon: '🧸', Clipart: 'tidy-toys', Coins: 2, MaxPerDay: 1 },
+            { Id: 'unload-dishwasher', Name: 'Unload the dishwasher', Icon: '🍴', Clipart: 'unload-dishwasher', Coins: 2, MaxPerDay: 1 },
+            { Id: 'tidy-craft-table', Name: 'Tidy the craft table', Icon: '✏️', Clipart: 'tidy-craft-table', Coins: 2, MaxPerDay: 1 },
+            { Id: 'put-away-clothes', Name: 'Put away your clean clothes', Icon: '👕', Clipart: 'put-away-clothes', Coins: 2, MaxPerDay: 1 },
+            { Id: 'play-brother', Name: 'Play with little brother', Icon: '👶', Clipart: 'play-brother', Coins: 3, MaxPerDay: 1 },
+            { Id: 'read-to-brother', Name: 'Read a picture book to your brother', Icon: '📖', Clipart: 'read-to-brother', Coins: 2, MaxPerDay: 1 }
         ];
+
+        // The clipart catalog is public/static, so it needs no token — unlike parentApi().
+        function loadClipart() {
+            return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('KidsLimit/clipart'), dataType: 'json' })
+                .then(function (list) { CLIPART = list || []; })
+                .catch(function () { CLIPART = []; });
+        }
 
         // Mirrors PluginConfiguration.DefaultPresets() on the server — used only by the
         // "Restore built-in presets" button to re-add missing built-ins client-side.
@@ -537,10 +557,16 @@
             return ApiClient.ajax({ type: 'GET', url: url, dataType: 'json' });
         }
 
+        // A chore may name art that is catalogued but not embedded yet — show the placeholder
+        // rather than a broken image until the picture lands.
+        function hasArt(key) {
+            return !!key && CLIPART.some(function (cp) { return cp.Key === key; });
+        }
+
         function renderChores() {
             var html = '';
             chores.forEach(function (c, i) {
-                var thumb = c.Clipart
+                var thumb = hasArt(c.Clipart)
                     ? '<img src="/KidsLimit/clipart/' + esc(c.Clipart) + '" alt="" style="width:100%;height:100%;object-fit:contain;" />'
                     : '<span style="font-size:1.6em;opacity:.6;">🖼️</span>';
                 html += '<div class="paperList choreRow" data-idx="' + i + '" style="padding:.6em 1em;margin-bottom:.4em;' +
@@ -597,11 +623,27 @@
                     inner + '</span><span style="font-size:.8em;opacity:.8;">' + esc(label) + '</span></button>';
             }
 
+            function heading(text) {
+                return '<div style="grid-column:1/-1;margin:.6em 0 .1em;font-size:.85em;opacity:.7;">' +
+                    esc(text) + '</div>';
+            }
+
+            // Grouped by art style: mixing the clay renders with the old line-art symbols on
+            // one kid page looks broken, so the two sets are visibly separated here.
+            var STYLE_LABELS = { clay: 'Clay pictures', symbol: 'Line art (older set)' };
             var opts = tile('<span style="font-size:2em;opacity:.6;">🚫</span>', 'No picture', '', !current);
+            var lastStyle = null;
             CLIPART.forEach(function (cp) {
-                opts += tile('<img src="/KidsLimit/clipart/' + cp.key + '" alt="" style="width:72px;height:72px;object-fit:contain;" />',
-                    cp.label, cp.key, current === cp.key);
+                if (cp.Style !== lastStyle) {
+                    lastStyle = cp.Style;
+                    opts += heading(STYLE_LABELS[cp.Style] || 'Pictures');
+                }
+                opts += tile('<img src="/KidsLimit/clipart/' + esc(cp.Key) + '" alt="" style="width:72px;height:72px;object-fit:contain;" />',
+                    cp.Label, cp.Key, current === cp.Key);
             });
+            if (!CLIPART.length) {
+                opts += heading('No built-in pictures are available on the server.');
+            }
 
             back.innerHTML = '<div style="background:var(--theme-body-bg,#101010);border-radius:14px;max-width:640px;' +
                 'width:100%;max-height:88vh;overflow:auto;padding:1.2em;box-shadow:0 12px 40px rgba(0,0,0,.5);">' +
@@ -799,7 +841,8 @@
             Dashboard.showLoadingMsg();
             Promise.all([
                 ApiClient.getPluginConfiguration(pluginId),
-                ApiClient.getUsers()
+                ApiClient.getUsers(),
+                loadClipart()
             ]).then(function (res) {
                 var cfg = res[0];
                 allUsers = res[1];
@@ -917,6 +960,20 @@
             page.querySelector('#btnAddChore').addEventListener('click', function () {
                 collectChores();
                 chores.push({ Id: '', Name: '', Icon: '', Clipart: '', Coins: 1, MaxPerDay: 1, Enabled: true });
+                renderChores();
+            });
+
+            page.querySelector('#btnAddSuggestedChores').addEventListener('click', function () {
+                collectChores();
+                SUGGESTED_CHORES.forEach(function (sc) {
+                    var exists = chores.some(function (c) { return c.Id === sc.Id; });
+                    if (!exists) {
+                        var copy = {};
+                        for (var k in sc) { if (sc.hasOwnProperty(k)) { copy[k] = sc[k]; } }
+                        copy.Enabled = true;
+                        chores.push(copy);
+                    }
+                });
                 renderChores();
             });
 

@@ -25,7 +25,12 @@
     <EmbeddedResource Include="Web\dashboard.html" />
     <EmbeddedResource Include="Web\kid.html" />
     <EmbeddedResource Include="Web\parent.html" />
+    <!-- Chore tile art. Raster wins over SVG for the same key (see ChoreClipart.Formats),
+         so dropping a new PNG in is all it takes to replace legacy line art. -->
     <EmbeddedResource Include="Web\clipart\*.svg" />
+    <EmbeddedResource Include="Web\clipart\*.png" />
+    <EmbeddedResource Include="Web\clipart\*.webp" />
+    <EmbeddedResource Include="Web\clipart\*.jpg" />
   </ItemGroup>
 
 </Project>

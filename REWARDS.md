@@ -109,6 +109,17 @@ remote (D-pad). Everything is pictures, emoji, counts and sounds.
    kid page URL. All UI iteration happens server-side; the APK never needs
    rebuilding.
 
+## Chore art
+
+The tile picture is the label — the child can't read the name — so chores are drawn from a
+built-in catalog (`ChoreClipart`), served by `GET /KidsLimit/clipart/{key}` and listed by
+`GET /KidsLimit/clipart`. The catalog only offers keys whose file is actually embedded, and
+raster art wins over SVG for the same key, so a new picture is a drop-in file plus one catalog
+line. The current set is soft-clay renders; seven legacy Mulberry Symbols line-art SVGs remain
+catalogued but are grouped separately in the pickers, since mixing the two styles on one page
+reads as broken. See [`docs/CHORE-IMAGE-PROMPTS.md`](docs/CHORE-IMAGE-PROMPTS.md) for the
+generator prompts and [`docs/ADDING-CHORES.md`](docs/ADDING-CHORES.md) for adding chores.
+
 ## Auth
 
 - Parent endpoints: existing `BonusApiToken` shared-secret scheme.
