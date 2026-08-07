@@ -224,4 +224,29 @@ public class PluginConfiguration : BasePluginConfiguration
             EveningCapMinutes = null,
         },
     };
+
+    /// <summary>
+    /// Builds the shipped chore set for a 6-year-old. Used for first-run seeding and for the
+    /// "Add suggested chores" action on the config page (which mirrors this list client-side).
+    /// <para>
+    /// Coin values are calibrated against the defaults — a coin is 5 minutes and
+    /// <see cref="MaxRedeemCoinsPerDay"/> is 6, so a full day of these chores earns more than
+    /// can be spent in one day: the child chooses, rather than clearing a checklist. Each
+    /// <see cref="Chore.Clipart"/> key is catalogued in <see cref="ChoreClipart"/>; keys whose
+    /// art is not embedded yet fall back to the emoji until the picture lands.
+    /// </para>
+    /// </summary>
+    /// <returns>A fresh list of the suggested chores.</returns>
+    public static List<Chore> DefaultChores() => new()
+    {
+        new Chore { Id = "make-bed", Name = "Make your bed", Icon = "🛏️", Clipart = "make-bed", Coins = 1, MaxPerDay = 1 },
+        new Chore { Id = "clothes-basket", Name = "Dirty clothes in the basket", Icon = "🧺", Clipart = "clothes-basket", Coins = 1, MaxPerDay = 1 },
+        new Chore { Id = "plate-in-sink", Name = "Put your plate in the sink", Icon = "🍽️", Clipart = "plate-in-sink", Coins = 1, MaxPerDay = 3 },
+        new Chore { Id = "tidy-toys", Name = "Tidy your room", Icon = "🧸", Clipart = "tidy-toys", Coins = 2, MaxPerDay = 1 },
+        new Chore { Id = "unload-dishwasher", Name = "Unload the dishwasher", Icon = "🍴", Clipart = "unload-dishwasher", Coins = 2, MaxPerDay = 1 },
+        new Chore { Id = "tidy-craft-table", Name = "Tidy the craft table", Icon = "✏️", Clipart = "tidy-craft-table", Coins = 2, MaxPerDay = 1 },
+        new Chore { Id = "put-away-clothes", Name = "Put away your clean clothes", Icon = "👕", Clipart = "put-away-clothes", Coins = 2, MaxPerDay = 1 },
+        new Chore { Id = "play-brother", Name = "Play with little brother", Icon = "👶", Clipart = "play-brother", Coins = 3, MaxPerDay = 1 },
+        new Chore { Id = "read-to-brother", Name = "Read a picture book to your brother", Icon = "📖", Clipart = "read-to-brother", Coins = 2, MaxPerDay = 1 },
+    };
 }

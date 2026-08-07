@@ -517,7 +517,9 @@ public class RewardsController : ControllerBase
             c.Id,
             c.Name,
             c.Icon,
-            c.Clipart,
+            // Blank out a key whose art is not embedded (yet), so the tile falls back to the
+            // emoji rather than showing a broken image on the TV.
+            Clipart = ChoreClipart.Resolve(c.Clipart) is null ? string.Empty : c.Clipart,
             c.Coins,
             c.MaxPerDay,
             ClaimedToday = RewardsService.ClaimedToday(wallet, c.Id, today),
@@ -797,31 +799,50 @@ public class RewardsController : ControllerBase
     }
 
     /// <summary>
-    /// Serves a built-in chore placeholder clipart as SVG. Public and cacheable — the art is
-    /// static and carries no user data. Used by the kid tile (when a chore has no photo) and by
-    /// the config-page picker. The key is validated against a fixed allow-list so it can never
-    /// be used to fetch arbitrary embedded resources.
+    /// Lists the built-in chore art that actually has a file embedded, for the picture pickers
+    /// on the config page and the phone page — so adding art is a drop-in file plus a catalog
+    /// line, with no picker list to update in two places. Public and cacheable: static metadata
+    /// about static art, no user data.
+    /// </summary>
+    /// <returns>Key, label and visual style for each offerable clipart.</returns>
+    [HttpGet("clipart")]
+    public ActionResult ClipartCatalog()
+    {
+        Response.Headers.CacheControl = "public, max-age=3600";
+        return Ok(ChoreClipart.Available()
+            .Select(e => new { e.Key, e.Label, Style = ChoreClipart.StyleOf(e.Key) }));
+    }
+
+    /// <summary>
+    /// Serves a built-in chore picture. Public and cacheable — the art is static and carries no
+    /// user data. Used by the kid tile (when a chore has no photo) and by the parent-facing
+    /// pickers. The key is validated against a fixed allow-list so it can never be used to fetch
+    /// arbitrary embedded resources; the content type comes from the resolved file, so raster art
+    /// and the legacy SVGs are both served correctly.
     /// </summary>
     /// <param name="key">The clipart key, e.g. "make-bed".</param>
-    /// <returns>The SVG image, or 404 for an unknown key.</returns>
+    /// <returns>The image, or 404 for an unknown key or one with no art embedded yet.</returns>
     [HttpGet("clipart/{key}")]
     public ActionResult Clipart([FromRoute] string key)
     {
-        var resource = ChoreClipart.ResourceName(key);
-        if (resource is null)
+        var resolved = ChoreClipart.Resolve(key);
+        if (resolved is null)
         {
             return NotFound();
         }
 
-        using var stream = GetType().Assembly.GetManifestResourceStream(resource);
+        using var stream = GetType().Assembly.GetManifestResourceStream(resolved.Resource);
         if (stream is null)
         {
             return NotFound();
         }
 
-        using var reader = new StreamReader(stream);
+        // Buffer: the resource stream is disposed with this scope, so it cannot be handed
+        // to the framework to write out lazily. The art is a few KB either way.
+        using var buffer = new MemoryStream();
+        stream.CopyTo(buffer);
         Response.Headers.CacheControl = "public, max-age=604800";
-        return Content(reader.ReadToEnd(), "image/svg+xml");
+        return File(buffer.ToArray(), resolved.ContentType);
     }
 
     // ------------------------------------------------------------------ helpers

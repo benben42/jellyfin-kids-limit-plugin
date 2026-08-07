@@ -388,13 +388,9 @@
         ['ThursdayPresetId', 'Thu'], ['FridayPresetId', 'Fri'], ['SaturdayPresetId', 'Sat'],
         ['SundayPresetId', 'Sun']
     ];
-    var CLIPART = [
-        { key: 'tidy-toys', label: 'Tidy up toys' }, { key: 'make-bed', label: 'Make the bed' },
-        { key: 'clothes-basket', label: 'Clothes basket' }, { key: 'set-table', label: 'Set the table' },
-        { key: 'water-plants', label: 'Water the plants' }, { key: 'books-shelf', label: 'Books on shelf' },
-        { key: 'wipe-table', label: 'Wipe the table' }, { key: 'feed-pet', label: 'Feed the pet' },
-        { key: 'brush-teeth', label: 'Brush your teeth' }, { key: 'help-baby', label: 'Help baby brother' }
-    ];
+    // Built-in chore art, loaded from GET /KidsLimit/clipart — the server lists only the keys
+    // that actually have a file embedded. Entries: { Key, Label, Style }.
+    var CLIPART = [];
     // Mirrors PluginConfiguration.DefaultPresets() server-side.
     var BUILTIN_PRESETS = [
         { Id: 'school-day', Name: 'School Day', DailyCapMinutes: 60, SessionCapMinutes: 45, MorningCapMinutes: 0, AfternoonCapMinutes: 30, EveningCapMinutes: 30 },
@@ -680,6 +676,16 @@
         return api('parent/meta').then(function (m) { meta = m; });
     }
 
+    function loadClipart() {
+        return api('clipart').then(function (list) { CLIPART = list || []; }, function () { CLIPART = []; });
+    }
+
+    // A chore may name art that is catalogued but not embedded yet — show the placeholder
+    // rather than a broken image until the picture lands.
+    function hasArt(key) {
+        return !!key && CLIPART.some(function (cp) { return cp.Key === key; });
+    }
+
     // ================================================================= settings
 
     function markDirty() {
@@ -911,7 +917,7 @@
     function renderChores() {
         var html = '';
         (S.Chores || []).forEach(function (c, i) {
-            var thumb = c.Clipart
+            var thumb = hasArt(c.Clipart)
                 ? '<img src="clipart/' + esc(c.Clipart) + '" alt="" />'
                 : '<span style="font-size:1.4em;opacity:.55;">🖼️</span>';
             html += '<div class="itemRow" data-idx="' + i + '">' +
@@ -970,9 +976,18 @@
                 inner + '<span class="lbl">' + esc(label) + '</span></button>';
         }
 
+        // Grouped by art style: mixing the clay renders with the old line-art symbols on one
+        // kid page looks broken, so the two sets are visibly separated here.
+        var STYLE_LABELS = { clay: 'Clay pictures', symbol: 'Line art (older set)' };
         var opts = tile('<span class="ph">🚫</span>', 'No picture', '', !current);
+        var lastStyle = null;
         CLIPART.forEach(function (cp) {
-            opts += tile('<img src="clipart/' + cp.key + '" alt="" />', cp.label, cp.key, current === cp.key);
+            if (cp.Style !== lastStyle) {
+                lastStyle = cp.Style;
+                opts += '<div style="grid-column:1/-1;margin:.6em 0 .1em;font-size:.8em;opacity:.65;">' +
+                    esc(STYLE_LABELS[cp.Style] || 'Pictures') + '</div>';
+            }
+            opts += tile('<img src="clipart/' + esc(cp.Key) + '" alt="" />', cp.Label, cp.Key, current === cp.Key);
         });
 
         back.innerHTML = '<div class="modalBox">' +
@@ -1308,6 +1323,7 @@
     // -------------------------------------------------------------------- boot
 
     loadMeta().then(function () {
+        loadClipart();
         load();
         setInterval(function () { if (view === 'dash') { load(); } }, 15000);
     }, function () {

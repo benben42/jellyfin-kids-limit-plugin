@@ -124,6 +124,14 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
                 config.Presets = PluginConfiguration.DefaultPresets();
             }
 
+            // Same one-shot rule for chores: seed the suggested set on a fresh install only, so
+            // a parent who deliberately deletes them doesn't get them back on every restart.
+            // Existing installs are untouched — they can use "Add suggested chores" instead.
+            if (config.Chores is null || config.Chores.Count == 0)
+            {
+                config.Chores = PluginConfiguration.DefaultChores();
+            }
+
             config.Initialized = true;
             changed = true;
         }

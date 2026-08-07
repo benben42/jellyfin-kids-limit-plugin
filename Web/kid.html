@@ -176,7 +176,9 @@
     }
     .chore .icon { font-size: 9vh; line-height: 1.1; }
     /* Placeholder clipart shown instead of the emoji when a chore has one (and no photo). */
-    .chore .clipart { width: 13vh; height: 13vh; object-fit: contain; }
+    /* The radius matters only for raster art, which is a full-bleed square: it gives it the
+       same rounded plate the legacy SVGs draw into their own transparent margin. */
+    .chore .clipart { width: 13vh; height: 13vh; object-fit: contain; border-radius: 2.2vh; }
     .chore .name, .title .name {
         font-size: 2.1vh; opacity: .75; max-width: 92%; text-align: center;
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -735,7 +737,7 @@
             var chore = (state.Chores || []).filter(function (c) { return c.Id === id; })[0];
             if (!chore) { return; }
             var face = chore.Clipart
-                ? '<img src="/KidsLimit/clipart/' + esc(chore.Clipart) + '" alt="" style="width:22vh;height:22vh;object-fit:contain;" />'
+                ? '<img src="/KidsLimit/clipart/' + esc(chore.Clipart) + '" alt="" style="width:22vh;height:22vh;object-fit:contain;border-radius:3.4vh;" />'
                 : '<span style="font-size:16vh;">' + esc(chore.Icon || '⭐') + '</span>';
             openOverlay(
                 face,
