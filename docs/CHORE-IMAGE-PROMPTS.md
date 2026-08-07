@@ -20,9 +20,10 @@ Where the art goes and how to wire a new one in: [`ADDING-CHORES.md`](ADDING-CHO
    prompt again rather than editing it.
 3. Ask for the result as a **square image**. If the model returns something else, say
    "regenerate as a square 1:1 image".
-4. Download at whatever size you get, then downscale to **512×512 PNG** (§4). The tile is
-   ~140 px on 1080p and ~280 px on 4K, and every byte ships inside the plugin DLL.
-5. Save each as `Web/clipart/<key>.png` using the exact key in the heading.
+4. Keep the full-resolution download as a master in `docs/pictures/<key>.png`, then convert to
+   a **512×512 WebP** for the app (§4). The tile is ~140 px on 1080p and ~280 px on 4K, and
+   every byte ships inside the plugin DLL.
+5. Save each as `Web/clipart/<key>.webp` using the exact key in the heading.
 
 The picture is the label — a 6-year-old who can't read has nothing else to go on. So the test
 for every image is: **cover up the other eight — would she still know which chore this is,
@@ -265,14 +266,23 @@ peach, periwinkle. If you add a tenth chore later, pick something not adjacent t
 
 ## 4. After generating
 
-```bash
-# square, 512px, no metadata; then crush it
-magick in.png -resize 512x512 -strip Web/clipart/<key>.png
-oxipng -o4 --strip safe Web/clipart/<key>.png    # or: pngquant --quality 65-90
+Keep the generator's full-size output in `docs/pictures/<key>.png` as the master, then produce
+the file the app ships:
+
+```python
+from PIL import Image
+im = Image.open('docs/pictures/<key>.png').convert('RGB').resize((512, 512), Image.LANCZOS)
+im.save('Web/clipart/<key>.webp', 'WEBP', quality=92, method=6)
 ```
 
-Target **under ~120 KB per file**. Corners are rounded by CSS on the kid page, so leave the
-image a full-bleed square — don't ask the generator for transparent rounded corners.
+**WebP, not PNG.** These are smooth 3D renders on flat pastel grounds: palette-quantised PNG
+dithers visible noise into exactly those flat areas, and full-colour PNG runs ~250 KB a tile.
+WebP at q92 is visually lossless here and lands around **25–35 KB** — the whole set is ~250 KB
+inside the DLL. Every client that runs Jellyfin's web UI, including the Android TV WebView,
+supports it.
+
+Corners are rounded by CSS on the kid page, so leave the image a full-bleed square — don't ask
+the generator for transparent rounded corners.
 
 Then check them together, not one at a time:
 
@@ -281,7 +291,11 @@ Then check them together, not one at a time:
 - Look for two tiles that read as the same picture in peripheral vision — that is the failure
   mode this whole file is built to avoid.
 
-## 5. The older line-art set
+## 5. Status of the set
+
+Eight of the nine are generated and in `Web/clipart/`. **`plate-in-sink` (§2.3) is still
+missing** — until it lands, that chore falls back to its 🍽️ emoji on the kid page, which works
+but is the odd tile out.
 
 Seven line-art SVGs from the previous set are still catalogued and offered separately in the
 picker (`set-table`, `water-plants`, `books-shelf`, `wipe-table`, `feed-pet`, `brush-teeth`,
@@ -289,6 +303,8 @@ picker (`set-table`, `water-plants`, `books-shelf`, `wipe-table`, `feed-pet`, `b
 
 **Don't mix them with the clay tiles on one kid page** — the styles fight and the page reads
 as half-finished. If you want one of those chores, generate it in clay by copying any prompt
-above and swapping the subject sentence and background colour, then drop the PNG in next to
+above and swapping the subject sentence and background colour, then drop the WebP in next to
 the SVG: raster wins over SVG for the same key automatically, so the tile switches style with
-no code change and chores already configured against that key keep working.
+no code change and chores already configured against that key keep working. (That is how
+`make-bed`, `clothes-basket` and `tidy-toys` were replaced; their now-unreachable SVGs were
+deleted afterwards.)

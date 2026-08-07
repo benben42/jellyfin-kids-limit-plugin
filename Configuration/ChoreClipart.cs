@@ -13,12 +13,12 @@ namespace Jellyfin.Plugin.KidsLimit.Configuration;
 /// <para>
 /// A key may be catalogued before its art exists — <see cref="Available"/> reports only the
 /// entries that actually resolve to an embedded file, so the config-page pickers never offer
-/// a picture that would 404. Dropping <c>Web/clipart/{key}.png</c> into the repo is therefore
+/// a picture that would 404. Dropping <c>Web/clipart/{key}.webp</c> into the repo is therefore
 /// the whole job of adding art for a catalogued key; see <c>docs/ADDING-CHORES.md</c>.
 /// </para>
 /// <para>
 /// Raster formats win over <c>.svg</c> for the same key (see <c>Formats</c>), so a new
-/// clay-render PNG dropped next to a legacy line-art SVG replaces it without a code change
+/// clay-render WebP dropped next to a legacy line-art SVG replaces it without a code change
 /// and without breaking chores already configured against that key.
 /// </para>
 /// </summary>
@@ -46,7 +46,8 @@ public static class ChoreClipart
     /// </summary>
     public static IReadOnlyList<ClipartEntry> Catalog { get; } = new List<ClipartEntry>
     {
-        // Current set — clay renders (docs/CHORE-IMAGE-PROMPTS.md).
+        // Current set — clay renders (docs/CHORE-IMAGE-PROMPTS.md). plate-in-sink has no art
+        // yet, so it stays out of the pickers and its chore falls back to the emoji.
         new("make-bed", "Make the bed"),
         new("clothes-basket", "Dirty clothes in the basket"),
         new("plate-in-sink", "Plate in the sink"),

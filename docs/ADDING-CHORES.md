@@ -13,7 +13,8 @@ nine existing prompts. Background on the whole rewards system: [`../REWARDS.md`]
 
 | Thing | Where it lives |
 | --- | --- |
-| The picture | `Web/clipart/<key>.png` (embedded in the DLL by a csproj glob) |
+| The picture | `Web/clipart/<key>.webp` (embedded in the DLL by a csproj glob) |
+| The full-size master it came from | `docs/pictures/<key>.png` (not embedded) |
 | The key → label catalog | `Configuration/ChoreClipart.cs` → `Catalog` |
 | The suggested chore (name, emoji, coins, max/day) | `Configuration/PluginConfiguration.cs` → `DefaultChores()` |
 | The same list, client-side | `Configuration/configPage.html` → `SUGGESTED_CHORES` |
@@ -25,7 +26,7 @@ Two properties make this cheap to extend:
   that actually have a file embedded, so the config page and the phone page never need editing
   to show new art, and never offer a picture that would 404.
 - **Raster beats SVG for the same key.** `ChoreClipart.Formats` resolves `.png` → `.webp` →
-  `.jpg` → `.svg`, so dropping `make-bed.png` next to the legacy `make-bed.svg` replaces the
+  `.jpg` → `.svg`, so dropping `make-bed.webp` next to the legacy `make-bed.svg` replaces the
   art with no code change and without breaking chores already configured against that key.
 
 ---
@@ -73,14 +74,18 @@ change only two things: the subject sentence at the top, and the background colo
 style, lighting and composition wording **exactly as it is** — that is what holds the set
 together. Pick a pastel not adjacent to the nine already in use (listed in §3).
 
-Then:
+Then keep the generator's full-size output as a master in `docs/pictures/<key>.png`, and
+produce the file the app ships:
 
-```bash
-magick in.png -resize 512x512 -strip Web/clipart/<key>.png
-oxipng -o4 --strip safe Web/clipart/<key>.png
+```python
+from PIL import Image
+im = Image.open('docs/pictures/<key>.png').convert('RGB').resize((512, 512), Image.LANCZOS)
+im.save('Web/clipart/<key>.webp', 'WEBP', quality=92, method=6)
 ```
 
-Full-bleed square, under ~120 KB. Corners are rounded by CSS on the kid page — don't attempt
+WebP, not PNG: these are smooth renders on flat pastel grounds, where palette-quantised PNG
+dithers visible noise into the flat areas and full-colour PNG costs ~250 KB a tile. Expect
+**25–35 KB**. Full-bleed square — corners are rounded by CSS on the kid page, so don't attempt
 transparent rounded corners in the image.
 
 Append the new prompt, in full, to `CHORE-IMAGE-PROMPTS.md §2` so the set stays reproducible.
@@ -102,7 +107,8 @@ legacy line-art entries:
 new("feed-the-cat", "Feed the cat"),
 ```
 
-`Keys` and the pickers derive from this. **No csproj edit** — `Web\clipart\*.png` is a glob.
+`Keys` and the pickers derive from this. **No csproj edit** — `Web\clipart\*.webp` is a glob
+(as are `*.png`, `*.jpg` and `*.svg`).
 
 ### 4.2 Only if it should be a built-in suggestion
 
@@ -149,7 +155,7 @@ Then:
 
 1. `GET /KidsLimit/clipart` lists the new key with `"Style": "clay"`. If it's missing, the
    file isn't embedded (check the extension and that the name matches the key exactly).
-2. `GET /KidsLimit/clipart/<key>` returns the image with `Content-Type: image/png`.
+2. `GET /KidsLimit/clipart/<key>` returns the image with `Content-Type: image/webp`.
 3. Config page → Rewards → the chore's thumbnail button → the picture appears under **Clay
    pictures**, not under *Line art*.
 4. Kid page: the tile shows the picture. If it shows the emoji instead, the key resolved to
