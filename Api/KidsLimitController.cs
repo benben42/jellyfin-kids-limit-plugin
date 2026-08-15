@@ -107,6 +107,7 @@ public class KidsLimitController : ControllerBase
             return Unauthorized();
         }
 
+        NoStore();
         var result = new List<UserStatusDto>();
         foreach (var cfg in Config.Users.Where(u => u.Enabled))
         {
@@ -140,6 +141,7 @@ public class KidsLimitController : ControllerBase
             return NotFound($"Unknown user '{user}'.");
         }
 
+        NoStore();
         return BuildStatus(resolved.Value);
     }
 
@@ -237,6 +239,7 @@ public class KidsLimitController : ControllerBase
             return NotFound($"Unknown user '{user}'.");
         }
 
+        NoStore();
         var history = _store.GetHistory(resolved.Value.UserIdN);
         if (days > 0 && history.Count > days)
         {
@@ -245,6 +248,14 @@ public class KidsLimitController : ControllerBase
 
         return history;
     }
+
+    /// <summary>
+    /// Marks a response as live data that must never be reused from a cache — the
+    /// dashboards poll these URLs on a timer, and a cached body silently freezes the
+    /// numbers on screen. See the same helper on <see cref="RewardsController"/>.
+    /// </summary>
+    private void NoStore() =>
+        Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
 
     private bool Authorized(string? token)
     {

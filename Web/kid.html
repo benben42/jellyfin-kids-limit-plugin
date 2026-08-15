@@ -246,6 +246,14 @@
     #overlayArt { font-size: 16vh; line-height: 1.15; }
     #overlayArt img { height: 36vh; border-radius: 2.4vh; box-shadow: 0 2vh 5vh rgba(0,0,0,.5); }
     #overlayCost { font-size: 5.4vh; font-weight: 900; color: var(--accent); margin-top: 1.8vh; }
+    /* Coins arriving from an approved chore: they visibly travel toward the 🐷 next to
+       them, so "mum said yes and these are now yours" is a picture, not a number that
+       changed while she blinked. */
+    #overlayArt .fly { display: inline-block; animation: fly 1s ease-in-out infinite; }
+    @keyframes fly {
+        0%, 100% { transform: translateX(-1.6vh) scale(1); }
+        50% { transform: translateX(1.6vh) scale(1.08); }
+    }
     #overlayButtons { display: flex; gap: 3.5vh; justify-content: center; margin-top: 4vh; }
     .obtn {
         font-size: 6.5vh; padding: 1.4vh 5vh; border-radius: 3.5vh; border: .6vh solid transparent;
@@ -393,6 +401,18 @@
     var overlayTimer = null;
     var lastCoins = null;
 
+    // Poll cadence. Normally every 5 s; but the instant a claim is sitting in the
+    // parent's queue the answer can land at ANY moment and the child is standing there
+    // waiting for it, so drop to 1.5 s for a couple of minutes. Bounded on purpose: a
+    // claim nobody answers must not leave the TV hammering the server all evening.
+    var POLL_IDLE_MS = 5000;
+    var POLL_EAGER_MS = 1500;
+    var EAGER_WINDOW_MS = 3 * 60 * 1000;
+    var pollTimer = null;
+    var eagerUntil = 0;
+    var inFlight = false;
+    var lastPendingCount = 0;
+
     // ------------------------------------------------------------------ audio
     var audioCtx = null;
     function beep(freq, dur, when) {
@@ -415,9 +435,15 @@
     function sndNo() { beep(220, .25); }
 
     // ------------------------------------------------------------------- api
+    // Every poll hits the same URL, so a cached body would freeze the coin count on the
+    // TV for as long as the cache holds it. The server sends no-store; belt-and-braces
+    // here because an Android TV WebView is the one client we cannot re-test easily —
+    // 'no-store' on the request plus a unique _ keeps it from ever matching a cache entry.
     function api(path, method) {
         var sep = path.indexOf('?') >= 0 ? '&' : '?';
-        return fetch('kid/' + path + sep + 'token=' + encodeURIComponent(token), { method: method || 'GET' })
+        return fetch(
+            'kid/' + path + sep + 'token=' + encodeURIComponent(token) + '&_=' + Date.now(),
+            { method: method || 'GET', cache: 'no-store' })
             .then(function (r) { if (!r.ok) { throw new Error(r.status); } return r.json(); });
     }
 
@@ -638,10 +664,45 @@
     }
 
     // --------------------------------------------------------------- loading
+    // How many chores are waiting on a parent right now — drives the eager cadence.
+    function pendingCount(s) {
+        return ((s && s.Chores) || []).reduce(function (n, c) { return n + (c.Pending || 0); }, 0);
+    }
+
+    // Per-chore pending counts, so a poll can tell WHICH 📨 just got answered.
+    function pendingMap(s) {
+        var m = {};
+        ((s && s.Chores) || []).forEach(function (c) { m[c.Id] = c.Pending || 0; });
+        return m;
+    }
+
+    function goEager() { eagerUntil = Date.now() + EAGER_WINDOW_MS; }
+
+    // One self-rescheduling timer instead of setInterval: a fixed interval can stack up
+    // requests when the network is slow, and Android freezes a backgrounded app's timers
+    // (so ticks silently vanish). Re-arming after every response — and pulling
+    // immediately on every "the page is in front again" signal — makes the page
+    // self-heal instead of sitting on a stale number.
+    function schedulePoll() {
+        if (pollTimer) { clearTimeout(pollTimer); }
+        pollTimer = setTimeout(function () {
+            // Nothing to show while hidden; visibilitychange pulls the moment we're back.
+            if (document.hidden) { schedulePoll(); return; }
+            loadState(false);
+        }, Date.now() < eagerUntil ? POLL_EAGER_MS : POLL_IDLE_MS);
+    }
+
     function loadState(initial) {
+        // Drop the call, but never the loop: returning without re-arming the timer here
+        // would stop the page refreshing for good.
+        if (inFlight) { schedulePoll(); return; }
+        inFlight = true;
         // Polls skip the library page (light=1) so they can run every few seconds —
         // a parent's approve/reject or coin grant shows up almost immediately.
         api(initial ? 'state' : 'state?light=1').then(function (s) {
+            inFlight = false;
+            var prevCoins = lastCoins;
+            var prevPending = pendingMap(state);
             state = s;
             renderName(s.Name);
             renderJar();
@@ -657,11 +718,48 @@
                 focusFirst();
             } else {
                 remarkTitles();
+                announceChanges(prevCoins, prevPending);
             }
+
+            // A newly-filed claim (from this TV or from a parent's page) starts the
+            // eager window; a quiet page falls back to the idle cadence on its own.
+            var pending = pendingCount(s);
+            if (pending > lastPendingCount) { goEager(); }
+            lastPendingCount = pending;
+
             document.getElementById('status').textContent = new Date().toLocaleTimeString();
+            schedulePoll();
         }).catch(function () {
+            inFlight = false;
             document.getElementById('status').textContent = '⚠';
+            schedulePoll();
         });
+    }
+
+    // The parent answers on THEIR phone, minutes later and out of sight — from the TV's
+    // point of view the reply just appears during a poll. Silently ticking a number up
+    // is invisible to a 6-year-old, so say it out loud: coins arriving get the party
+    // (they fly into the piggy), a 📨 that came back with nothing gets a shrug. Without
+    // this the page looked "not refreshed" even when it had refreshed.
+    function announceChanges(prevCoins, prevPending) {
+        if (prevCoins === null) { return; }
+        var gained = state.CoinBalance - prevCoins;
+        if (gained > 0) {
+            sndYay();
+            queueFlash(
+                '<span class="fly">' + coinRow(gained) + '</span> ➜ 🐷',
+                '<span style="color:var(--good);">+' + gained + '</span>', // green: this GIVES
+                3000);
+            return;
+        }
+        var now = pendingMap(state);
+        var answered = Object.keys(prevPending).some(function (id) {
+            return prevPending[id] > 0 && (now[id] || 0) < prevPending[id];
+        });
+        if (answered) {
+            sndNo();
+            queueFlash('📨 ➜ 🤷', '', 2200);
+        }
     }
 
     function loadMore() {
@@ -710,6 +808,24 @@
         document.getElementById('overlay').classList.remove('open');
         if (overlayTimer) { clearTimeout(overlayTimer); overlayTimer = null; }
         focusFirst();
+        if (queuedFlash) {
+            var q = queuedFlash;
+            queuedFlash = null;
+            // Small beat so the card visibly closes and re-opens rather than swapping
+            // its contents, which would read as "nothing happened".
+            setTimeout(function () { flashOverlay(q.art, q.cost, q.ms); }, 400);
+        }
+    }
+
+    // A poll can land news (coins approved) while the child is mid-confirm on something
+    // else. Never yank her dialog away — hold the news until the dialog is gone.
+    var queuedFlash = null;
+    function queueFlash(artHtml, costHtml, ms) {
+        if (document.getElementById('overlay').classList.contains('open')) {
+            queuedFlash = { art: artHtml, cost: costHtml, ms: ms };
+            return;
+        }
+        flashOverlay(artHtml, costHtml, ms);
     }
 
     function flashOverlay(artHtml, costHtml, ms, reload) {
@@ -777,6 +893,9 @@
         api('claim?choreId=' + encodeURIComponent(choreId), 'POST').then(function (r) {
             if (r.Ok) {
                 sndYay();
+                // From here on a parent may approve at any second, and she is watching
+                // the screen for it — poll fast so the coins land while she still cares.
+                goEager();
                 flashOverlay('📨', 'ask mum/dad', 2200, true);
             } else {
                 sndNo();
@@ -896,11 +1015,26 @@
         if (e.target.closest && e.target.closest('#more')) { loadMore(); }
     });
 
-    loadState(true);
-    setInterval(function () { loadState(false); }, 5000);
+    // Every way the page can come back to the front pulls fresh state immediately.
+    // 'pageshow' covers a bfcache restore (which replays a snapshot of the OLD numbers),
+    // 'focus'/visibilitychange cover returning from the Jellyfin app on the TV, and
+    // 'online' covers the Wi-Fi dropping mid-evening.
+    function refreshNow() {
+        if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+        loadState(false);
+    }
+
+    // Exposed so the Android TV shell can force a pull on resume, where a WebView does
+    // not reliably fire visibilitychange of its own accord.
+    window.kidsLimitRefresh = refreshNow;
+
+    loadState(true); // arms the poll loop itself once it lands
     document.addEventListener('visibilitychange', function () {
-        if (!document.hidden) { loadState(false); }
+        if (!document.hidden) { refreshNow(); }
     });
+    window.addEventListener('pageshow', refreshNow);
+    window.addEventListener('focus', refreshNow);
+    window.addEventListener('online', refreshNow);
 })();
 </script>
 </body>

@@ -92,6 +92,7 @@ public class RewardsController : ControllerBase
             return NotFound($"Unknown user '{user}'.");
         }
 
+        NoStore();
         return WalletDto(guid.Value);
     }
 
@@ -423,6 +424,7 @@ public class RewardsController : ControllerBase
             return Unauthorized();
         }
 
+        NoStore();
         var config = Config;
         return new
         {
@@ -500,6 +502,7 @@ public class RewardsController : ControllerBase
             return Unauthorized();
         }
 
+        NoStore();
         var config = Config;
         var userId = IdN(kid.Value.Guid);
         var local = DateTime.Now;
@@ -609,6 +612,7 @@ public class RewardsController : ControllerBase
             return Unauthorized();
         }
 
+        NoStore();
         var (items, total) = LibraryPage(kid.Value.Guid, Config, skip, take);
         return new { Items = items, Total = total };
     }
@@ -846,6 +850,16 @@ public class RewardsController : ControllerBase
     }
 
     // ------------------------------------------------------------------ helpers
+
+    /// <summary>
+    /// Marks a response as live data that must never be reused from a cache.
+    /// The kid page and the parent page both poll the same URL over and over, so a
+    /// cached body means the child keeps staring at a coin count her parent already
+    /// changed. Images and the clipart catalog deliberately do NOT get this — they are
+    /// static and should stay cached.
+    /// </summary>
+    private void NoStore() =>
+        Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
 
     private static string ContentTypeFor(string path) =>
         Path.GetExtension(path).ToLowerInvariant() switch
