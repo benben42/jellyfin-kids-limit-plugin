@@ -211,6 +211,13 @@ step, no framework, no dependencies. Changing UI means editing the embedded HTML
 - `Web/kid.html` targets a non-reading child on a TV remote: picture-only tiles, D-pad
   arrow-key focus handling, focus preserved across refreshes. `?light=true` on
   `/KidsLimit/kid/state` skips the expensive library page for frequent polling.
+  Spending is taught rather than labelled: prices render as coins matched against her
+  balance (solid = affordable, `.missing` = still needed), a spend animates coins from
+  the piggy chip into the TV meter, and focusing a spend tile previews the gain as a
+  ghost segment on that meter. Everything spendable is a poster — there are no
+  abstract "+N minutes" tiles. All polled endpoints send `no-store` and the poll loop
+  re-arms itself per response (Android freezes backgrounded timers); anything that
+  changes behind the child's back — a parent approving a chore — announces itself.
 - Known duplication to keep in sync: `SUGGESTED_CHORES` in `configPage.html` must mirror
   `PluginConfiguration.DefaultChores()`. See `docs/ADDING-CHORES.md` §4.2.
 

@@ -617,6 +617,33 @@ public sealed class RewardsService
         return false;
     }
 
+    /// <summary>
+    /// The item the kid is watching right now, if anything — read straight off the live
+    /// sessions, so it is cheap enough for the kid page's frequent polling (no library
+    /// query). An episode is collapsed onto its series so the tile is priced and postered
+    /// the same way the watch grid prices and posters it.
+    /// </summary>
+    /// <param name="userGuid">The kid's Jellyfin user.</param>
+    /// <returns>The now-playing item, or null when nothing is playing.</returns>
+    public BaseItem? NowPlayingFor(Guid userGuid)
+    {
+        try
+        {
+            var item = _sessionManager.Sessions
+                .Where(s => s.UserId == userGuid && s.FullNowPlayingItem is not null)
+                .OrderByDescending(s => s.LastActivityDate)
+                .Select(s => s.FullNowPlayingItem)
+                .FirstOrDefault();
+
+            return item is Episode episode ? episode.Series ?? item : item;
+        }
+        catch (Exception ex)
+        {
+            // Never let a session-list hiccup take down the kid page.
+            _logger.LogDebug(ex, "KidsLimit: now-playing lookup failed for {User}.", userGuid);
+            return null;
+        }
+    }
 }
 
 /// <summary>Result of a redeem attempt.</summary>

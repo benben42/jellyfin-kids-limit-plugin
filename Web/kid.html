@@ -103,12 +103,29 @@
     #tvTime .meter {
         width: 16vh; height: 2.8vh; border-radius: 2vh; overflow: hidden;
         background: rgba(0, 0, 0, .45); box-shadow: inset 0 0 1vh rgba(0, 0, 0, .5);
+        display: flex; /* fill + ghost sit side by side */
     }
     #tvTime .meter > span {
         display: block; height: 100%; border-radius: 2vh;
         background: linear-gradient(90deg, #6ff0a3, #35c46f);
         transition: width .6s ease;
     }
+    /* Ghost segment: how much longer the meter WOULD be if she bought the tile she is
+       standing on. Shown on focus, before she commits — the answer to "what do I get
+       for this?" in the same picture as the thing it changes. Gold, because it is
+       coins turning into time; it goes solid green the moment she pays. */
+    /* Selector must out-rank "#tvTime .meter > span" above, or the ghost inherits the
+       solid green fill and the preview becomes indistinguishable from real time left. */
+    #tvTime .meter > #meterGhost {
+        /* Hatched gold against dark, plus a hard left edge: the fill itself turns amber
+           when time is nearly out, which is exactly when the preview matters most, so
+           the ghost cannot rely on colour alone to read as a separate segment. */
+        background: repeating-linear-gradient(115deg,
+            rgba(255, 210, 74, .95) 0 .7vh, rgba(0, 0, 0, .6) .7vh 1.4vh);
+        box-shadow: inset .35vh 0 0 rgba(0, 0, 0, .75);
+        animation: ghostPulse 1.1s ease-in-out infinite;
+    }
+    @keyframes ghostPulse { 0%, 100% { opacity: .95; } 50% { opacity: .45; } }
     #tvTime.low .meter > span { background: linear-gradient(90deg, #ffe38a, #f0a83a); }
     #tvTime.empty .meter > span { background: rgba(255, 255, 255, .25); }
     #tvMins { font-size: 3.6vh; font-weight: 900; color: var(--good); min-width: 2ch; text-align: center; }
@@ -161,6 +178,31 @@
         filter: drop-shadow(0 .06em .05em rgba(0,0,0,.35));
     }
 
+    /* A price coin she CANNOT cover yet. Drawing the price as "coins I have" plus
+       "coins I still need" turns an arithmetic problem (I have 5, it costs 8) into a
+       counting one (three hollow ones left) — the whole reason a six-year-old could not
+       tell which tiles were within reach. */
+    .coin.missing { filter: grayscale(1) brightness(.5); opacity: .5; }
+
+    /* One coin in flight from the piggy to the TV meter — the exchange itself, drawn.
+       position:fixed because it travels between two chips in the sticky header while
+       the grid may be scrolled anywhere. */
+    .flyCoin {
+        position: fixed; z-index: 20; pointer-events: none; font-size: 5vh;
+        transition: transform .75s cubic-bezier(.45, 0, .25, 1), opacity .75s ease-in;
+    }
+
+    /* The cheapest thing she can afford outright, breathing gently: on a wall of locked
+       tiles there is always exactly one saying "this one, right now". */
+    .tile.canBuy { border-color: rgba(255, 210, 74, .55); animation: canBuy 1.8s ease-in-out infinite; }
+    /* Higher specificity than both rules above, so the focus ring always wins the border
+       no matter which of them the stylesheet happens to declare last. */
+    .tile.canBuy:focus, .tile.canBuy.focused { animation: none; border-color: var(--accent); }
+    @keyframes canBuy {
+        0%, 100% { box-shadow: 0 1.2vh 3vh rgba(0, 0, 0, .3); }
+        50% { box-shadow: 0 1.2vh 3vh rgba(0, 0, 0, .3), 0 0 3.5vh rgba(255, 210, 74, .5); }
+    }
+
     /* A 3-2-1 pile of the same star-coins: shown instead of a row once a count
        passes 4 — long coin rows stop being countable and just eat the header. */
     .coinPile {
@@ -169,8 +211,8 @@
         filter: drop-shadow(0 .06em .05em rgba(0,0,0,.35));
     }
 
-    /* square tiles (chores + extra time) share one size so the rows line up */
-    .chore, .timeTile {
+    /* square chore tiles. Spending tiles are all posters now, so this is the only square. */
+    .chore {
         width: var(--tile); height: var(--tile); background: linear-gradient(150deg, var(--card2), var(--card));
         box-shadow: 0 1.2vh 3vh rgba(0,0,0,.3); gap: .6vh;
     }
@@ -198,10 +240,6 @@
         position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
         font-size: 8.5vh; background: rgba(13, 16, 48, .55); border-radius: 2.2vh;
     }
-
-    /* extra-time tiles: coins → plain minutes, to finish whatever is playing */
-    .timeTile .icon { font-size: 8.5vh; line-height: 1.1; }
-    .timeTile .name { font-size: 3vh; font-weight: 800; color: var(--good); opacity: 1; }
 
     /* titles (library posters) — same column width as the square tiles */
     .title { width: var(--tile); }
@@ -249,6 +287,8 @@
     /* Coins arriving from an approved chore: they visibly travel toward the 🐷 next to
        them, so "mum said yes and these are now yours" is a picture, not a number that
        changed while she blinked. */
+    /* The idle "how this works" strip: three wordless lines, the whole economy. */
+    #overlayArt .how { display: block; font-size: 7.5vh; line-height: 1.55; white-space: nowrap; }
     #overlayArt .fly { display: inline-block; animation: fly 1s ease-in-out infinite; }
     @keyframes fly {
         0%, 100% { transform: translateX(-1.6vh) scale(1); }
@@ -307,8 +347,6 @@
 
         .chore .icon { font-size: calc(var(--tile) * .42); }
         .chore .clipart { width: 62%; height: 62%; }
-        .timeTile .icon { font-size: calc(var(--tile) * .4); }
-        .timeTile .name { font-size: clamp(15px, 4vw, 27px); }
         .chore .name, .title .name { font-size: clamp(12px, 3.2vw, 19px); }
         .badge { font-size: clamp(14px, 3.6vw, 23px); }
         .stateBadge { font-size: calc(var(--tile) * .4); }
@@ -317,6 +355,7 @@
         #overlayCard { padding: 4vw 6vw; border-radius: 6vw; max-width: 90vw; }
         #overlayArt { font-size: clamp(64px, 22vw, 140px); }
         #overlayArt img { height: clamp(180px, 55vw, 320px); }
+        #overlayArt .how { font-size: clamp(26px, 9vw, 64px); }
         #overlayCost { font-size: clamp(26px, 8vw, 50px); margin-top: 2vh; }
         #overlayButtons { gap: 6vw; margin-top: 4vh; }
         .obtn { font-size: clamp(34px, 11vw, 64px); padding: 1.4vh 7vw; border-radius: 4vw; }
@@ -351,7 +390,7 @@
         <div class="wallet">
             <div id="tvTime" class="chipBox">
                 <span class="tv">📺</span>
-                <div class="meter"><span id="meterFill"></span></div>
+                <div class="meter"><span id="meterFill"></span><span id="meterGhost"></span></div>
                 <span id="tvMins"></span>
             </div>
             <div id="jar" class="chipBox">
@@ -369,8 +408,11 @@
         <div id="chores" class="grid"></div>
     </div>
 
-    <div id="timeSection" class="section">
-        <div class="rowTitle">📺➕ <span class="pill spend">🐷 ➜ <span class="coin"></span></span></div>
+    <!-- "Keep watching this" — one tile, faced with the poster of whatever she had on.
+         It replaced the old abstract "+5 minutes" tiles: a spend that buys a picture she
+         recognises, rather than a unit of time she cannot feel. -->
+    <div id="timeSection" class="section hidden">
+        <div class="rowTitle">⏯️ <span class="pill spend">🐷 ➜ <span class="coin"></span></span></div>
         <div id="timeTiles" class="grid"></div>
     </div>
 
@@ -464,6 +506,27 @@
     }
 
     function redeemable() { return state ? state.RedeemableNow : 0; }
+
+    // Draw a price as coins she can MATCH against her own piggy: solid coins are the ones
+    // she can pay right now, hollow ones are what is still missing. "Two more" is
+    // something a six-year-old can count; "it costs 8 and I have 5" is subtraction, which
+    // is why a bare number told her nothing about what was within reach. Past six the row
+    // stops being countable, so the pile plus the number does the work instead.
+    function priceCoins(cost, have) {
+        if (cost > 6) { return '<span class="coinPile"></span>' + cost; }
+        var out = '';
+        for (var i = 0; i < cost; i++) {
+            out += '<span class="coin' + (i < have ? '' : ' missing') + '"></span>';
+        }
+        return out;
+    }
+
+    // The price badge, with its prefix kept in an attribute so a later affordability
+    // refresh can redraw the coins without rebuilding (and re-focusing) the whole tile.
+    function priceBadge(cost, prefix) {
+        return '<div class="badge" data-prefix="' + prefix + '">' +
+            prefix + priceCoins(cost, redeemable()) + '</div>';
+    }
 
     var lastName = null;
 
@@ -609,25 +672,58 @@
             (t.InProgress ? '<div class="prog"><span style="width:' + t.ProgressPct + '%;"></span></div>' : '') +
             '</div>' +
             '<div class="name">' + esc(t.Name) + '</div>' +
-            '<div class="badge">' + (t.InProgress ? '▶ ' : '') + coin() + t.CoinCost + '</div>' +
+            priceBadge(t.CoinCost, t.InProgress ? '▶ ' : '') +
             '</div>';
     }
 
-    function timeTile(coins) {
+    var lastContinueSig = '';
+
+    // The tile that replaced the old abstract "+5 ⏱" tiles: the poster of whatever she
+    // was watching. Minutes are a unit a non-reader cannot feel, but "keep watching THIS"
+    // is a picture she can act on — and it means every spend on the page now buys a show,
+    // which is one rule instead of two.
+    function renderContinue() {
+        var section = document.getElementById('timeSection');
+        var grid = document.getElementById('timeTiles');
+        var c = state.Continue;
+        section.classList.toggle('hidden', !c);
+        if (!c) {
+            lastContinueSig = '';
+            grid.innerHTML = '';
+            return;
+        }
+
+        // Rebuild only on a real change: this runs on every poll, and re-writing the tile
+        // would drop the child's D-pad focus and restart the poster load.
+        var sig = JSON.stringify(c);
+        if (sig === lastContinueSig) { return; }
+        lastContinueSig = sig;
+
+        var active = document.activeElement;
+        var hadFocus = active && active.getAttribute &&
+            active.getAttribute('data-kind') === 'continue';
         var reason = lockReason();
-        var blocked = reason !== null || coins > redeemable();
-        var mins = coins * (state ? state.CoinMinutes : 5);
-        return '<div class="tile timeTile' + (blocked ? ' disabled' : '') +
-            (reason === 'moon' ? ' lockMoon' : '') + '" tabindex="0"' +
-            ' data-kind="time" data-coins="' + coins + '" data-blocked="' + (blocked ? '1' : '0') + '">' +
-            '<div class="icon">📺</div>' +
-            '<div class="name">+' + mins + ' ⏱</div>' +
-            '<div class="badge">' + coin() + coins + '</div>' +
-            '</div>';
-    }
+        var blocked = reason !== null;
 
-    function renderTimeTiles() {
-        document.getElementById('timeTiles').innerHTML = [1, 3].map(timeTile).join('');
+        grid.innerHTML =
+            '<div class="tile title' + (blocked ? ' disabled' : '') +
+            (reason === 'moon' ? ' lockMoon' : '') + '" tabindex="0"' +
+            ' data-kind="continue" data-id="' + esc(c.ItemId) + '"' +
+            ' data-cost="' + c.CoinCost + '" data-blocked="' + (blocked ? '1' : '0') + '">' +
+            '<div class="posterWrap">' +
+            '<img class="poster" src="kid/image/' + esc(c.ItemId) +
+                '?token=' + encodeURIComponent(token) + '" alt="" ' +
+                'onerror="this.style.visibility=\'hidden\'" />' +
+            (c.InProgress ? '<div class="prog"><span style="width:' + c.ProgressPct + '%;"></span></div>' : '') +
+            '</div>' +
+            '<div class="name">' + esc(c.Name) + '</div>' +
+            priceBadge(c.CoinCost, '⏯ ') +
+            '</div>';
+
+        if (hadFocus) {
+            var again = document.querySelector('.tile[data-kind="continue"]');
+            if (again) { again.focus(); }
+        }
     }
 
     function renderTitlesFresh() {
@@ -645,22 +741,40 @@
             : '';
     }
 
-    // Refresh affordability on already-rendered posters without rebuilding the grid,
-    // so a 20 s poll never yanks the child's D-pad focus mid-scroll.
+    // Refresh affordability on already-rendered tiles without rebuilding the grid, so a
+    // poll never yanks the child's D-pad focus mid-scroll. Redraws the price coins too:
+    // every approved chore changes which of them are solid and which are still hollow,
+    // and that is the whole signal telling her what she can have.
     function remarkTitles() {
         var reason = lockReason();
-        document.querySelectorAll('.title').forEach(function (el) {
+        var have = redeemable();
+        var cheapest = null;
+        var cheapestCost = Infinity;
+
+        document.querySelectorAll('.tile[data-cost]').forEach(function (el) {
+            var cost = parseInt(el.getAttribute('data-cost'), 10) || 0;
             var blocked = reason !== null;
             el.classList.toggle('disabled', blocked);
             el.classList.toggle('lockMoon', reason === 'moon');
             el.setAttribute('data-blocked', blocked ? '1' : '0');
+            el.classList.remove('canBuy');
+
+            var badge = el.querySelector('.badge');
+            if (badge) {
+                badge.innerHTML = (badge.getAttribute('data-prefix') || '') + priceCoins(cost, have);
+            }
+
+            // Fully affordable, not just partially — the pulse must never point at
+            // something that will only buy her half of what the poster promises.
+            if (!blocked && cost <= have && cost < cheapestCost) {
+                cheapestCost = cost;
+                cheapest = el;
+            }
         });
-        document.querySelectorAll('.timeTile').forEach(function (el) {
-            var blocked = reason !== null || parseInt(el.getAttribute('data-coins'), 10) > redeemable();
-            el.classList.toggle('disabled', blocked);
-            el.classList.toggle('lockMoon', reason === 'moon');
-            el.setAttribute('data-blocked', blocked ? '1' : '0');
-        });
+
+        // Exactly one tile breathes, so a wall of locked posters always has one clear
+        // "this one, right now" instead of reading as a flat no.
+        if (cheapest) { cheapest.classList.add('canBuy'); }
     }
 
     // --------------------------------------------------------------- loading
@@ -709,17 +823,22 @@
             renderToday();
             renderTime();
             renderChores();
+            renderContinue();
             if (initial) {
                 titles = s.Titles || [];
                 titlesTotal = s.TitlesTotal || titles.length;
                 pageSize = s.PageSize || 60;
-                renderTimeTiles();
                 renderTitlesFresh();
+            }
+            // Always: an approved chore changes which prices she can cover, and that
+            // has to show on every tile already on screen, not just on new ones.
+            remarkTitles();
+            if (initial) {
                 focusFirst();
             } else {
-                remarkTitles();
                 announceChanges(prevCoins, prevPending);
             }
+            maybePromptOutOfTime();
 
             // A newly-filed claim (from this TV or from a parent's page) starts the
             // eager window; a quiet page falls back to the idle cadence on its own.
@@ -785,6 +904,79 @@
         });
     }
 
+    // ------------------------------------------------------- the exchange, drawn
+    // The reason coins exist, animated: they physically leave the piggy, cross the
+    // header and land in the TV meter, which then grows. Deliberately NOT behind a
+    // celebration card — a full-screen 🎉 hides the two chips whose relationship is the
+    // entire lesson. This is the page's answer to "why would I swap these?".
+    function flyCoinsToTv(coins) {
+        var jar = document.getElementById('jar');
+        var tv = document.getElementById('tvTime');
+        var meter = tv ? tv.querySelector('.meter') : null;
+        if (!jar || !meter || tv.style.display === 'none') { return; }
+
+        var from = jar.getBoundingClientRect();
+        var to = meter.getBoundingClientRect();
+        // Three is already read as "my coins went over there"; a dozen is just noise.
+        var count = Math.max(1, Math.min(coins, 3));
+        for (var i = 0; i < count; i++) { flyOneCoin(from, to, i); }
+    }
+
+    function flyOneCoin(from, to, i) {
+        var c = document.createElement('span');
+        c.className = 'coin flyCoin';
+        document.body.appendChild(c);
+
+        var size = c.offsetWidth || 24;
+        c.style.left = (from.left + from.width / 2 - size / 2) + 'px';
+        c.style.top = (from.top + from.height / 2 - size / 2) + 'px';
+        var dx = (to.left + to.width / 2) - (from.left + from.width / 2);
+        var dy = (to.top + to.height / 2) - (from.top + from.height / 2);
+
+        // The delay both staggers the coins and lets the start position commit, so the
+        // transition actually animates instead of snapping.
+        setTimeout(function () {
+            c.style.transform = 'translate(' + dx + 'px,' + dy + 'px) scale(.45)';
+            c.style.opacity = '.15';
+            beep(880 + (i * 110), .07);
+        }, 60 + (i * 130));
+        setTimeout(function () { c.remove(); }, 1100 + (i * 130));
+    }
+
+    // Fly the coins, then pull fresh state so the meter grows just as they land.
+    function spendAnimation(coins, then) {
+        flyCoinsToTv(coins);
+        setTimeout(function () {
+            beep(560, .09);
+            beep(840, .13, .09);
+            refreshNow();
+            if (then) { then(); }
+        }, 820);
+    }
+
+    // Standing on a spend tile previews what it would DO: a ghost segment on the TV
+    // meter, sized to the time those coins buy. She sees the trade before making it.
+    function previewSpend(tile) {
+        var ghost = document.getElementById('meterGhost');
+        if (!ghost) { return; }
+
+        var raw = tile ? tile.getAttribute('data-cost') : null;
+        var budget = state ? state.TimeBudgetSeconds : 0;
+        var left = state ? state.TimeRemainingSeconds : null;
+        if (raw === null || !state || !budget || left === null || left === undefined ||
+            tile.getAttribute('data-blocked') === '1') {
+            ghost.style.width = '0%';
+            return;
+        }
+
+        var coins = Math.min(parseInt(raw, 10) || 0, redeemable());
+        if (coins <= 0) { ghost.style.width = '0%'; return; }
+
+        var fillPct = Math.min(100, left * 100 / budget);
+        var addPct = coins * state.CoinMinutes * 60 * 100 / budget;
+        ghost.style.width = Math.max(0, Math.min(addPct, 100 - fillPct)) + '%';
+    }
+
     // --------------------------------------------------------------- overlay
     function openOverlay(artHtml, costHtml, buttons) {
         if (overlayTimer) { clearTimeout(overlayTimer); overlayTimer = null; }
@@ -807,6 +999,7 @@
     function closeOverlay() {
         document.getElementById('overlay').classList.remove('open');
         if (overlayTimer) { clearTimeout(overlayTimer); overlayTimer = null; }
+        attractOpen = false;
         focusFirst();
         if (queuedFlash) {
             var q = queuedFlash;
@@ -844,7 +1037,7 @@
         if (tile.getAttribute('data-blocked') === '1') {
             sndNo();
             // For a locked tile, tell her *why* in pictures: empty jar vs spent-for-today.
-            if (kind === 'title' || kind === 'time') { lockFlash(lockReason() || 'coins'); }
+            if (kind === 'title' || kind === 'continue') { lockFlash(lockReason() || 'coins'); }
             return;
         }
         sndSelect();
@@ -862,13 +1055,15 @@
                     { label: '👍', go: true, action: function () { claim(id); } },
                     { label: '👎', action: closeOverlay },
                 ]);
-        } else if (kind === 'time') {
-            var n = parseInt(tile.getAttribute('data-coins'), 10) || 1;
+        } else if (kind === 'continue') {
+            var cont = state.Continue;
+            if (!cont) { return; }
+            var contCharge = Math.min(cont.CoinCost, redeemable());
             openOverlay(
-                '<span style="font-size:16vh;">📺</span>',
-                coin() + ' × ' + n + ' → +' + (n * state.CoinMinutes) + ' ⏱ ?',
+                '<img src="kid/image/' + esc(cont.ItemId) + '?token=' + encodeURIComponent(token) + '" alt="" />',
+                priceCoins(contCharge, contCharge) + ' ➜ 📺 ?',
                 [
-                    { label: '👍', go: true, action: function () { redeemTime(n); } },
+                    { label: '⏯', go: true, action: spendContinue },
                     { label: '↩️', action: closeOverlay },
                 ]);
         } else if (kind === 'title') {
@@ -880,7 +1075,7 @@
             var partial = charge < title.CoinCost;
             openOverlay(
                 '<img src="kid/image/' + esc(id) + '?token=' + encodeURIComponent(token) + '" alt="" />',
-                coin() + ' × ' + charge + ' → ' + (title.InProgress ? '⏯' : '▶️') +
+                priceCoins(charge, charge) + ' ➜ ' + (title.InProgress ? '⏯' : '▶️') +
                     (partial ? ' ' + (charge * state.CoinMinutes) + ' ⏱' : '') + ' ?',
                 [
                     { label: title.InProgress ? '⏯' : '▶️', go: true, action: function () { redeem(id); } },
@@ -904,6 +1099,18 @@
         }).catch(function () { sndNo(); flashOverlay('⚠️', '', 1800); });
     }
 
+    // While something is genuinely playing, buy plain time: redeeming the title would
+    // re-issue a Play command and yank her back to its resume point mid-episode. With
+    // nothing playing, redeem the title so the spend also STARTS it — the coins have to
+    // visibly produce television, or the exchange has no point.
+    function spendContinue() {
+        var c = state.Continue;
+        if (!c) { return; }
+        var charge = Math.min(c.CoinCost, redeemable());
+        if (charge <= 0) { sndNo(); lockFlash(lockReason() || 'coins'); return; }
+        if (c.NowPlaying) { redeemTime(charge); } else { redeem(c.ItemId); }
+    }
+
     function redeem(itemId) {
         api('redeem?itemId=' + encodeURIComponent(itemId), 'POST').then(function (r) {
             if (r.Error) {
@@ -912,11 +1119,14 @@
                 if (r.Error === 'dailycap') { flashOverlay('🌙💤', '☀️ tomorrow', 2200, true); }
                 else { flashOverlay(coin() + '🔒', '🧹✨ ➜ ' + coin(), 2200, true); }
             } else {
-                sndYay();
-                // Played on her Jellyfin session, or a nudge to open the Jellyfin app.
-                // Partial: she got part of the movie — the moon hints the rest comes another day.
-                var art = (r.Played ? '🎉 ▶️' : '🎉 📺 👆') + (r.Partial ? ' 🌙' : '');
-                flashOverlay(art, '', r.Played ? 2600 : 4200, true);
+                // Get out of the way and let her watch the coins become TV time. Only the
+                // things she still has to ACT on stay as a card: go open Jellyfin, or the
+                // moon saying the rest of this film waits for tomorrow.
+                closeOverlay();
+                spendAnimation(r.CoinsSpent || 1, function () {
+                    if (!r.Played) { sndYay(); flashOverlay('🎉 📺 👆' + (r.Partial ? ' 🌙' : ''), '', 4200); }
+                    else if (r.Partial) { flashOverlay('▶️ 🌙', '', 2200); }
+                });
             }
         }).catch(function () { sndNo(); flashOverlay('⚠️', '', 1800); });
     }
@@ -928,10 +1138,62 @@
                 if (r.Error === 'dailycap') { flashOverlay('🌙💤', '☀️ tomorrow', 2200, true); }
                 else { flashOverlay(coin() + '🔒', '🧹✨ ➜ ' + coin(), 2200, true); }
             } else {
-                sndYay();
-                flashOverlay('🎉 📺 +' + (coins * state.CoinMinutes) + ' ⏱', '', 2600, true);
+                closeOverlay();
+                spendAnimation(coins);
             }
         }).catch(function () { sndNo(); flashOverlay('⚠️', '', 1800); });
+    }
+
+    // ------------------------------------------------- teaching the exchange
+    var outOfTimePrompted = false;
+    var idleTimer = null;
+    var attractOpen = false;
+    var attractShown = false;
+
+    // The single moment the "why" is self-evident: the TV just went flat and she still
+    // has coins. Asking then — rather than leaving a gold row she has to reason her way
+    // to — is the difference between a shop and an offer. Armed once per flat battery,
+    // so it asks when it matters and then shuts up.
+    function maybePromptOutOfTime() {
+        var left = state.TimeRemainingSeconds;
+        if (left === null || left === undefined) { return; }
+        if (left > 0) { outOfTimePrompted = false; return; }
+        if (outOfTimePrompted || redeemable() <= 0 || !state.Continue) { return; }
+        if (document.getElementById('overlay').classList.contains('open')) { return; }
+
+        outOfTimePrompted = true;
+        sndSelect();
+        var charge = Math.min(state.Continue.CoinCost, redeemable());
+        openOverlay(
+            '🐷 ➜ 📺',
+            priceCoins(charge, charge) + ' ➜ 📺 ?',
+            [
+                { label: '👍', go: true, action: spendContinue },
+                { label: '↩️', action: closeOverlay },
+            ]);
+    }
+
+    // Left alone, the page teaches itself: chores fill the piggy, the piggy fills the
+    // TV, the TV plays a film. Three wordless lines — the whole economy. Once per idle
+    // stretch only: something that keeps popping up stops being a lesson and becomes
+    // wallpaper she learns to ignore.
+    function resetIdle() {
+        attractShown = false;
+        if (idleTimer) { clearTimeout(idleTimer); }
+        idleTimer = setTimeout(showAttract, 45000);
+    }
+
+    function showAttract() {
+        if (attractShown || document.hidden) { return; }
+        if (document.getElementById('overlay').classList.contains('open')) { return; }
+        attractShown = true;
+        attractOpen = true;
+        flashOverlay(
+            '<span class="how">🧹 ➜ ' + coin() + ' ➜ 🐷</span>' +
+            '<span class="how">🐷 ➜ ' + coin() + ' ➜ 📺</span>' +
+            '<span class="how">📺 ➜ 🍿</span>',
+            '',
+            6000);
     }
 
     // --------------------------------------------- D-pad spatial navigation
@@ -989,6 +1251,11 @@
     }
 
     document.addEventListener('keydown', function (e) {
+        resetIdle();
+        // Any button dismisses the attract strip — it must never sit between her and the
+        // thing she just pressed a direction towards.
+        if (attractOpen) { closeOverlay(); e.preventDefault(); return; }
+
         var overlayOpen = document.getElementById('overlay').classList.contains('open');
         switch (e.key) {
             case 'ArrowLeft': move('left'); e.preventDefault(); break;
@@ -1010,10 +1277,18 @@
     });
 
     document.addEventListener('click', function (e) {
+        resetIdle();
+        if (attractOpen) { closeOverlay(); return; }
         var tile = e.target.closest ? e.target.closest('.tile') : null;
         if (tile) { onActivate(tile); return; }
         if (e.target.closest && e.target.closest('#more')) { loadMore(); }
     });
+
+    // Focusing a spend tile previews it on the TV meter; leaving it clears the preview.
+    document.addEventListener('focusin', function (e) {
+        previewSpend(e.target && e.target.closest ? e.target.closest('.tile') : null);
+    });
+    document.addEventListener('focusout', function () { previewSpend(null); });
 
     // Every way the page can come back to the front pulls fresh state immediately.
     // 'pageshow' covers a bfcache restore (which replays a snapshot of the OLD numbers),
@@ -1029,6 +1304,7 @@
     window.kidsLimitRefresh = refreshNow;
 
     loadState(true); // arms the poll loop itself once it lands
+    resetIdle();
     document.addEventListener('visibilitychange', function () {
         if (!document.hidden) { refreshNow(); }
     });
