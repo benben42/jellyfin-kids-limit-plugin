@@ -913,13 +913,16 @@
         var jar = document.getElementById('jar');
         var tv = document.getElementById('tvTime');
         var meter = tv ? tv.querySelector('.meter') : null;
-        if (!jar || !meter || tv.style.display === 'none') { return; }
+        // No meter on screen (an unlimited day hides it) means the coins have nowhere
+        // visible to land — the caller falls back to a card so the spend is never silent.
+        if (!jar || !meter || tv.style.display === 'none') { return false; }
 
         var from = jar.getBoundingClientRect();
         var to = meter.getBoundingClientRect();
         // Three is already read as "my coins went over there"; a dozen is just noise.
         var count = Math.max(1, Math.min(coins, 3));
         for (var i = 0; i < count; i++) { flyOneCoin(from, to, i); }
+        return true;
     }
 
     function flyOneCoin(from, to, i) {
@@ -945,10 +948,15 @@
 
     // Fly the coins, then pull fresh state so the meter grows just as they land.
     function spendAnimation(coins, then) {
-        flyCoinsToTv(coins);
+        var flew = flyCoinsToTv(coins);
+        if (!flew) {
+            // Nothing to fly into: keep the old celebration card rather than letting a
+            // spend pass with no feedback at all.
+            sndYay();
+            flashOverlay('🎉 📺', '', 2000);
+        }
         setTimeout(function () {
-            beep(560, .09);
-            beep(840, .13, .09);
+            if (flew) { beep(560, .09); beep(840, .13, .09); }
             refreshNow();
             if (then) { then(); }
         }, 820);
