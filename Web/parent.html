@@ -443,7 +443,9 @@
     // Served from /KidsLimit/parent, so relative paths hit sibling /KidsLimit/* endpoints.
     function api(path, method, body) {
         var sep = path.indexOf('?') >= 0 ? '&' : '?';
-        var opts = { method: method || 'GET' };
+        // no-store: the dashboard polls the same URLs on a timer, and a cached body
+        // would leave a parent looking at coin counts and pending claims that already moved.
+        var opts = { method: method || 'GET', cache: 'no-store' };
         if (body !== undefined) {
             opts.headers = { 'Content-Type': 'application/json' };
             opts.body = JSON.stringify(body);
@@ -1326,6 +1328,12 @@
         loadClipart();
         load();
         setInterval(function () { if (view === 'dash') { load(); } }, 15000);
+        // A phone backgrounds this page constantly (it lives in a notification tap),
+        // and its timers get frozen while it is away — pull as soon as it is back so a
+        // parent never approves a claim that was already handled.
+        document.addEventListener('visibilitychange', function () {
+            if (!document.hidden && view === 'dash') { load(); }
+        });
     }, function () {
         $('status').textContent = 'Unauthorized — check the token in the URL.';
     });

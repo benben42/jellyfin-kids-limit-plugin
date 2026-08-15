@@ -63,6 +63,27 @@ class MainActivity : Activity() {
             .show()
     }
 
+    override fun onPause() {
+        webView.onPause()
+        super.onPause()
+    }
+
+    /**
+     * Coming back from the Jellyfin app is the moment the page is most likely to be
+     * stale — coins may have been approved while we were away, and Android freezes a
+     * backgrounded app's JS timers, so the page's own poll may have missed ticks. A
+     * WebView does not reliably fire `visibilitychange` on resume, so tell the page
+     * directly instead of hoping it noticed.
+     */
+    override fun onResume() {
+        super.onResume()
+        webView.onResume()
+        webView.evaluateJavascript(
+            "window.kidsLimitRefresh && window.kidsLimitRefresh();",
+            null,
+        )
+    }
+
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         // Remote BACK closes the page's overlay (the page listens for Escape) instead of
         // exiting the app — this is a kid kiosk; HOME is how you leave it.

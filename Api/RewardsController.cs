@@ -92,6 +92,7 @@ public class RewardsController : ControllerBase
             return NotFound($"Unknown user '{user}'.");
         }
 
+        NoStore();
         return WalletDto(guid.Value);
     }
 
@@ -423,6 +424,7 @@ public class RewardsController : ControllerBase
             return Unauthorized();
         }
 
+        NoStore();
         var config = Config;
         return new
         {
@@ -500,6 +502,7 @@ public class RewardsController : ControllerBase
             return Unauthorized();
         }
 
+        NoStore();
         var config = Config;
         var userId = IdN(kid.Value.Guid);
         var local = DateTime.Now;
@@ -574,6 +577,7 @@ public class RewardsController : ControllerBase
         return new
         {
             kid.Value.Name,
+            Continue = BuildContinue(config, kid.Value.Guid),
             CoinBalance = wallet.CoinBalance,
             CoinMinutes = Math.Max(1, config.CoinMinutes),
             RedeemableNow = redeemableNow,
@@ -609,6 +613,7 @@ public class RewardsController : ControllerBase
             return Unauthorized();
         }
 
+        NoStore();
         var (items, total) = LibraryPage(kid.Value.Guid, Config, skip, take);
         return new { Items = items, Total = total };
     }
@@ -847,6 +852,16 @@ public class RewardsController : ControllerBase
 
     // ------------------------------------------------------------------ helpers
 
+    /// <summary>
+    /// Marks a response as live data that must never be reused from a cache.
+    /// The kid page and the parent page both poll the same URL over and over, so a
+    /// cached body means the child keeps staring at a coin count her parent already
+    /// changed. Images and the clipart catalog deliberately do NOT get this — they are
+    /// static and should stay cached.
+    /// </summary>
+    private void NoStore() =>
+        Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
+
     private static string ContentTypeFor(string path) =>
         Path.GetExtension(path).ToLowerInvariant() switch
         {
@@ -926,9 +941,17 @@ public class RewardsController : ControllerBase
     /// item never gets a play date of its own (only its episodes do), so every series would
     /// sink into the alphabetical tail while movies float. Instead we ask for recently
     /// played movies AND episodes, collapse each episode onto its series, and keep the
-    /// first <see cref="RecentFrontMax"/> distinct titles that have a poster.
+    /// first <paramref name="max"/> distinct titles that have a poster.
     /// </summary>
-    private List<BaseItem> RecentlyWatchedFront(Jellyfin.Database.Implementations.Entities.User user)
+    /// <param name="user">The kid's Jellyfin user.</param>
+    /// <param name="max">
+    /// How many titles are wanted. The "keep watching" tile asks for exactly one, which
+    /// keeps the query small enough to run on every poll of <see cref="KidState"/>.
+    /// </param>
+    /// <returns>The leading titles, most recently watched first.</returns>
+    private List<BaseItem> RecentlyWatchedFront(
+        Jellyfin.Database.Implementations.Entities.User user,
+        int max = RecentFrontMax)
     {
         var recent = _libraryManager.GetItemList(new InternalItemsQuery(user)
         {
@@ -940,7 +963,7 @@ public class RewardsController : ControllerBase
                 (ItemSortBy.DatePlayed, Jellyfin.Database.Implementations.Enums.SortOrder.Descending),
             },
             // Headroom: several episodes of one series collapse into a single tile.
-            Limit = RecentFrontMax * 3,
+            Limit = max * 3,
         });
 
         var front = new List<BaseItem>();
@@ -966,13 +989,61 @@ public class RewardsController : ControllerBase
             }
 
             front.Add(target);
-            if (front.Count >= RecentFrontMax)
+            if (front.Count >= max)
             {
                 break;
             }
         }
 
         return front;
+    }
+
+    /// <summary>
+    /// The single thing the kid is most likely to want to spend coins on, faced with its
+    /// own poster: whatever is playing on her session right now, else the last thing she
+    /// watched. This is what replaced the old abstract "+5 minutes" tiles — a picture of
+    /// a show is something a non-reader can act on, a unit of time is not.
+    /// <para>
+    /// <c>NowPlaying</c> decides which way the kid page spends: while something is
+    /// actually playing it buys plain extra time (leaving playback alone), otherwise it
+    /// redeems the title and starts it.
+    /// </para>
+    /// </summary>
+    /// <param name="config">Plugin config.</param>
+    /// <param name="userGuid">The kid's Jellyfin user.</param>
+    /// <returns>The tile payload, or null when there is nothing to continue.</returns>
+    private object? BuildContinue(PluginConfiguration config, Guid userGuid)
+    {
+        var user = _userManager.GetUserById(userGuid);
+        if (user is null)
+        {
+            return null;
+        }
+
+        var playing = _rewards.NowPlayingFor(userGuid);
+
+        // Only the fallback costs a library query, and it asks for exactly one title.
+        var item = playing ?? RecentlyWatchedFront(user, 1).FirstOrDefault();
+        if (item is null || !item.IsVisibleStandalone(user))
+        {
+            return null;
+        }
+
+        var title = _rewards.BuildTitle(config, item, user);
+        if (title is null)
+        {
+            return null;
+        }
+
+        return new
+        {
+            ItemId = title.ItemId.ToString("N", CultureInfo.InvariantCulture),
+            title.Name,
+            title.CoinCost,
+            title.InProgress,
+            title.ProgressPct,
+            NowPlaying = playing is not null,
+        };
     }
 
     /// <summary>Coins the kid may still redeem today: bounded by balance and the daily cap.</summary>

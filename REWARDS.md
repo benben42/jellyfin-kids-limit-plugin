@@ -41,8 +41,13 @@ remote (D-pad). Everything is pictures, emoji, counts and sounds.
 - **Two lock reasons** on the kid page, told apart in pictures: 🔒 on a coin =
   the jar is empty (go earn coins); 🌙 = coins are banked but today's redeem
   allowance is spent (come back tomorrow). Posters are never permanently locked.
-- **Plain extra time**: ⏳ tiles (1 or 3 coins) redeem coins into bonus time with
-  no title attached — for finishing whatever is already playing on the TV.
+- **Keep watching**: one tile, faced with the **poster** of whatever is playing
+  now (or was last watched), priced at what it costs to finish. It replaced the
+  old abstract "1 coin / 3 coins → +N minutes" tiles: minutes are a unit a
+  non-reader cannot feel, a picture of her show is one she can act on, and it
+  leaves a single rule — coins buy shows. While something is genuinely playing
+  it spends through `kid/time` (bonus time only, playback untouched); with
+  nothing playing it redeems the title so the spend also *starts* it.
 - **Redeemed time behaves like bonus time** (§5.1): it lifts daily, session and
   the currently-active window budget — but as **one day-wide pool**. A playing
   second that exceeds any base cap drains the pool by one second (exactly once,
@@ -90,9 +95,32 @@ remote (D-pad). Everything is pictures, emoji, counts and sounds.
    - The watch grid is sorted by most-recently-watched first, movies and series
      mixed by real recency (a series' recency comes from its episodes' play
      dates), then alphabetically.
+   - **Prices are drawn as coins matched against her own piggy**: solid coins
+     are the ones she can pay right now, hollow ones are what is still missing.
+     Counting "two more" is something she can do; "it costs 8 and I have 5" is
+     subtraction. Above six coins the row stops being countable and becomes the
+     pile plus the number. Exactly one tile — the cheapest she can afford
+     outright — breathes, so a wall of locked posters always offers one clear
+     "this one, right now" instead of reading as a flat no.
+   - **The exchange is animated, not narrated**: on a spend the coins visibly
+     leave the piggy, cross the header and land in the TV meter, which grows as
+     they arrive. Standing on a spend tile first previews it — a hatched gold
+     ghost segment on the meter showing how much longer it would get. No
+     celebration card covers this: the two chips and their relationship *are*
+     the lesson.
+   - **Asked at the moment it matters**: when the meter hits empty and she still
+     has redeemable coins, the page offers 🐷 ➜ 📺 with one button, once per
+     flat battery. Left idle, it shows a wordless three-line explainer —
+     🧹→🪙→🐷, 🐷→🪙→📺, 📺→🍿 — once per idle stretch.
    - The page polls a lightweight state endpoint (`kid/state?light=1`, no
-     library page) every few seconds, so parent approvals/rejections/coin
-     grants show up without a manual refresh.
+     library page) every 5 s, dropping to 1.5 s for three minutes while a claim
+     is waiting on a parent, so an approval lands while the child is still
+     watching for it. All the polled endpoints are `no-store`; the loop re-arms
+     itself after every response and pulls immediately on visibility/focus/
+     pageshow/online, because Android freezes a backgrounded app's timers.
+   - **An answer from the parent announces itself**: approved coins fly into the
+     piggy with a sound and a green `+N`; a claim that came back with nothing
+     gets a shrug. A number quietly ticking up is invisible to a six-year-old.
    - D-pad spatial navigation (arrow keys in WebView), huge focus ring, WebAudio
      sound feedback. No reading required.
 2. **Parent dashboard** (existing admin page) — per-kid wallet: balance, pending
