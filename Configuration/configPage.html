@@ -222,6 +222,15 @@
                         <label class="inputLabel inputLabelUnfocused" for="maxRedeemCoinsPerDay">Max coins redeemable per day (0 = unlimited)</label>
                         <input is="emby-input" type="number" min="0" id="maxRedeemCoinsPerDay" />
                     </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="defaultSpendCoins">Kid page spend clock starts on (coins)</label>
+                        <input is="emby-input" type="number" min="1" id="defaultSpendCoins" />
+                        <div class="fieldDescription">
+                            The kid page asks "how much telly?" on a clock face. It opens already set to
+                            this many coins, so the usual answer is one press of 👍; ▲/▼ change it by a
+                            coin at a time. Default 3 (= 15 minutes at 5 minutes per coin).
+                        </div>
+                    </div>
                 </div>
 
                 <div class="verticalSection">
@@ -866,6 +875,8 @@
                 page.querySelector('#bankCapCoins').value = cfg.BankCapCoins != null ? cfg.BankCapCoins : 24;
                 page.querySelector('#maxRedeemCoinsPerDay').value =
                     cfg.MaxRedeemCoinsPerDay != null ? cfg.MaxRedeemCoinsPerDay : 6;
+                page.querySelector('#defaultSpendCoins').value =
+                    cfg.DefaultSpendCoins > 0 ? cfg.DefaultSpendCoins : 3;
                 notifyTargets = cfg.NotificationTargets || [];
 
                 renderPresets();
@@ -897,6 +908,7 @@
                 cfg.CoinMinutes = parseInt(page.querySelector('#coinMinutes').value, 10) || 5;
                 cfg.BankCapCoins = parseInt(page.querySelector('#bankCapCoins').value, 10) || 0;
                 cfg.MaxRedeemCoinsPerDay = parseInt(page.querySelector('#maxRedeemCoinsPerDay').value, 10) || 0;
+                cfg.DefaultSpendCoins = parseInt(page.querySelector('#defaultSpendCoins').value, 10) || 3;
                 cfg.Chores = chores;
                 cfg.ReferenceItemIds = refItemIds;
                 cfg.NotificationTargets = notifyTargets;

@@ -64,6 +64,7 @@ public class SettingsController : ControllerBase
             CoinMinutes = config.CoinMinutes,
             BankCapCoins = config.BankCapCoins,
             MaxRedeemCoinsPerDay = config.MaxRedeemCoinsPerDay,
+            DefaultSpendCoins = config.DefaultSpendCoins,
             Presets = config.Presets,
             Users = config.Users,
             Chores = config.Chores,
@@ -118,6 +119,13 @@ public class SettingsController : ControllerBase
         config.CoinMinutes = Math.Max(1, dto.CoinMinutes);
         config.BankCapCoins = Math.Max(0, dto.BankCapCoins);
         config.MaxRedeemCoinsPerDay = Math.Max(0, dto.MaxRedeemCoinsPerDay);
+
+        // Upper bound is the spend clock's own ceiling: a wedge past one full hour wraps
+        // onto itself and stops meaning anything, so the clock never offers more than that.
+        config.DefaultSpendCoins = Math.Clamp(
+            dto.DefaultSpendCoins <= 0 ? 3 : dto.DefaultSpendCoins,
+            1,
+            Math.Max(1, 60 / Math.Max(1, config.CoinMinutes)));
 
         // An empty token would disable the API — and with it the very page this request
         // came from. Keep the existing token instead; changing it requires a new value.

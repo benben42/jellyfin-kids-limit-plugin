@@ -268,9 +268,13 @@
                         <input type="number" min="0" id="setBankCap" /></div>
                     <div class="field"><label>Max redeem / day (0 = ∞)</label>
                         <input type="number" min="0" id="setMaxRedeem" /></div>
+                    <div class="field"><label>Kid page starts on (coins)</label>
+                        <input type="number" min="1" id="setDefaultSpend" /></div>
                 </div>
                 <p class="hint">Coins never expire; the bank cap is the only anti-hoarding tool.
-                    The daily redeem cap stops a big bank being spent in one sitting.</p>
+                    The daily redeem cap stops a big bank being spent in one sitting.
+                    “Starts on” is where the kid page's spend clock opens — at 3 coins × 5 minutes
+                    she taps 👍 for 15 minutes and only uses ▲/▼ to ask for something else.</p>
             </div>
             <div class="card">
                 <div class="groupTitle">Reference titles (kid page “watch” tiles)</div>
@@ -580,13 +584,12 @@
                 '" data-claim="' + esc(c.Id) + '" data-op="reject">✗</button></div>';
         });
 
-        html += '<div class="btns" style="margin-top:.45em;">';
-        meta.Chores.forEach(function (c) {
-            html += '<button type="button" class="btnEarn" data-userid="' + esc(userId) +
-                '" data-chore="' + esc(c.Id) + '" title="' + esc(c.Name) + '">+ ' +
-                esc(c.Icon || '⭐') + ' ' + esc(c.Name) + ' ' + coin() + c.Coins + '</button>';
-        });
-        html += '<button type="button" class="btnRedeemCoins" data-userid="' + esc(userId) + '">Spend coins…</button>' +
+        // Deliberately NOT one "+ chore" button per chore: that was a dozen rows of
+        // buttons per kid for something the kid herself does from her own page (and the
+        // claim then lands right here as ⏳ to approve). Manual coins stay reachable
+        // through "± adjust", which covers the same need in one control.
+        html += '<div class="btns" style="margin-top:.45em;">' +
+            '<button type="button" class="btnRedeemCoins" data-userid="' + esc(userId) + '">Spend coins…</button>' +
             '<button type="button" class="btnAdjustCoins" data-userid="' + esc(userId) + '">± adjust</button></div>';
 
         el.innerHTML = html;
@@ -599,15 +602,6 @@
                     '&claimId=' + encodeURIComponent(this.getAttribute('data-claim')), 'POST')
                     .then(function (wallet) { renderWallet(uid, wallet); },
                           function () { toast('Claim update failed.'); });
-            };
-        });
-        el.querySelectorAll('.btnEarn').forEach(function (b) {
-            b.onclick = function () {
-                var uid = this.getAttribute('data-userid');
-                api('wallet/earn?user=' + encodeURIComponent(uid) +
-                    '&choreId=' + encodeURIComponent(this.getAttribute('data-chore')), 'POST')
-                    .then(function (wallet) { renderWallet(uid, wallet); },
-                          function () { toast('Failed to add coins.'); });
             };
         });
         el.querySelectorAll('.btnRedeemCoins').forEach(function (b) {
@@ -1132,6 +1126,7 @@
         $('setCoinMinutes').value = S.CoinMinutes || 5;
         $('setBankCap').value = S.BankCapCoins != null ? S.BankCapCoins : 24;
         $('setMaxRedeem').value = S.MaxRedeemCoinsPerDay != null ? S.MaxRedeemCoinsPerDay : 6;
+        $('setDefaultSpend').value = S.DefaultSpendCoins > 0 ? S.DefaultSpendCoins : 3;
     }
 
     function renderAllSettings() {
@@ -1163,6 +1158,7 @@
             CoinMinutes: parseInt($('setCoinMinutes').value, 10) || 5,
             BankCapCoins: parseInt($('setBankCap').value, 10) || 0,
             MaxRedeemCoinsPerDay: parseInt($('setMaxRedeem').value, 10) || 0,
+            DefaultSpendCoins: parseInt($('setDefaultSpend').value, 10) || 3,
             Presets: S.Presets,
             Users: S.Users,
             Chores: S.Chores,

@@ -25,8 +25,7 @@
            width-aware clamp() values for phones/tablets, where height is the WRONG
            axis to size from (it's the long one in portrait). flex-wrap then picks the
            column count on its own: ~2 across on a phone, more on a tablet. */
-        --tile: 21vh;        /* square chore/time tile + poster column width */
-        --poster-h: 31.5vh;  /* poster height, kept at a 2:3 ratio to --tile */
+        --tile: 21vh;        /* square chore tile; the spend tile is 1.5 of these */
         --grid-gap: 2.6vh;
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -221,7 +220,7 @@
     /* The radius matters only for raster art, which is a full-bleed square: it gives it the
        same rounded plate the legacy SVGs draw into their own transparent margin. */
     .chore .clipart { width: 13vh; height: 13vh; object-fit: contain; border-radius: 2.2vh; }
-    .chore .name, .title .name {
+    .chore .name {
         font-size: 2.1vh; opacity: .75; max-width: 92%; text-align: center;
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
@@ -241,31 +240,32 @@
         font-size: 8.5vh; background: rgba(13, 16, 48, .55); border-radius: 2.2vh;
     }
 
-    /* titles (library posters) — same column width as the square tiles */
-    .title { width: var(--tile); }
-    .title .posterWrap { position: relative; width: var(--tile); }
-    .title .poster {
-        width: var(--tile); height: var(--poster-h); object-fit: cover; border-radius: 2.4vh;
-        background: linear-gradient(150deg, var(--card2), var(--card));
-        display: block; box-shadow: 0 1.4vh 3.5vh rgba(0,0,0,.4);
+    /* -------- the one spend control -------- */
+    /* There used to be a wall of posters here, each with its own coin price. A
+       six-year-old could not convert: every tile asked a different arithmetic question,
+       and none of them said what she actually wanted ("more telly, now"). So the whole
+       grid collapsed into ONE tile — coin goes into the telly — and the amount is chosen
+       afterwards on a clock face, which is a picture of time rather than a number. */
+    #spendTile {
+        width: calc(var(--tile) * 1.5); height: calc(var(--tile) * 1.5);
+        padding: 1.6vh;
+        background:
+            radial-gradient(75% 75% at 50% 32%, rgba(255, 210, 74, .16), transparent 70%),
+            linear-gradient(150deg, var(--card2), var(--card));
+        box-shadow: 0 1.4vh 3.4vh rgba(0, 0, 0, .35);
+        border-color: rgba(255, 210, 74, .55);
     }
-    /* how far into it she is — an in-progress movie costs only what's left */
-    .title .prog {
-        position: absolute; left: 1.2vh; right: 1.2vh; bottom: 1.2vh; height: 1.3vh;
-        border-radius: 1vh; background: rgba(0, 0, 0, .6); overflow: hidden;
-        box-shadow: 0 0 1vh rgba(0,0,0,.5);
+    #spendTile svg { width: 100%; height: 100%; }
+    /* The coin drops into the slot on a loop, so the tile explains itself at rest —
+       nothing else on the page has to carry the "coins buy telly" idea any more. */
+    #spendTile .dropCoin { animation: coinDrop 3s ease-in-out infinite; }
+    @keyframes coinDrop {
+        0%   { transform: translateY(-7px); opacity: 0; }
+        14%  { transform: translateY(0); opacity: 1; }
+        55%  { transform: translateY(0); opacity: 1; }
+        76%  { transform: translateY(21px); opacity: 0; }
+        100% { transform: translateY(-7px); opacity: 0; }
     }
-    .title .prog > span {
-        display: block; height: 100%; border-radius: 1vh;
-        background: linear-gradient(90deg, #6ff0a3, #35c46f);
-    }
-    .title .name { padding-top: .9vh; }
-
-    #more { display: flex; align-items: center; justify-content: center;
-        width: var(--tile); height: var(--poster-h); font-size: 6vh; opacity: .5; }
-    #more.spin { animation: spin 1s linear infinite; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
     .empty { opacity: .6; font-size: 3vh; padding: 4vh 0; }
 
     /* -------- overlay: confirm / celebrate -------- */
@@ -304,6 +304,64 @@
     .obtn:focus { border-color: var(--accent); transform: scale(1.14);
         box-shadow: 0 0 5vh rgba(255, 210, 74, .55); }
 
+    /* -------- overlay: the spend clock -------- */
+    /* How much telly? asked on an analog clock instead of in minutes. The gold wedge
+       starts at the minute hand and sweeps forward, so the answer is a SHAPE ("that
+       much of the circle"), which a child who cannot yet do arithmetic can still read
+       and compare. ▲/▼ sit above and below the face because that is exactly where the
+       D-pad buttons that drive them are. */
+    #clockOverlay {
+        position: fixed; inset: 0; z-index: 12; display: none;
+        align-items: center; justify-content: center; gap: 6vw;
+        background: rgba(6, 8, 22, .94); backdrop-filter: blur(.6vh);
+    }
+    #clockOverlay.open { display: flex; animation: pop .18s ease; }
+
+    .dial { display: flex; flex-direction: column; align-items: center; gap: 1vh; }
+    /* min(vh, vw): on the TV the face is sized off height, but the same page opens on a
+       phone in portrait where height is the LONG axis and a vh-sized clock would run off
+       the sides. */
+    #clockFace { width: min(60vh, 72vw); height: min(60vh, 72vw); }
+    #clockFace .face { fill: #141a3d; stroke: rgba(255, 255, 255, .22); stroke-width: 3; }
+    /* The wedge sweeps straight over the numerals, so they carry their own dark halo
+       (paint-order puts the stroke behind the fill) — white on gold is otherwise the
+       one thing on this screen you cannot read from the sofa. */
+    #clockFace .num {
+        fill: #fff; font-family: inherit; font-weight: 800; font-size: 17px;
+        text-anchor: middle; dominant-baseline: central;
+        stroke: rgba(13, 16, 48, .85); stroke-width: 4px; paint-order: stroke;
+    }
+    #clockFace .tick { stroke: rgba(255, 255, 255, .35); stroke-width: 2.5; stroke-linecap: round; }
+    #clockFace .hand { stroke: #fff; stroke-linecap: round; filter: drop-shadow(0 2px 3px rgba(0,0,0,.6)); }
+    #clockFace .hub { fill: var(--accent); }
+    /* Gold = the time she is buying, the same gold as the coins and the meter ghost. */
+    #wedge { fill: rgba(255, 210, 74, .85); }
+    #rimArc { stroke: var(--accent); stroke-width: 11; fill: none; stroke-linecap: round; }
+    #endHand { stroke: var(--accent); stroke-width: 5; stroke-linecap: round; opacity: .9; }
+    #endDot { fill: var(--accent); }
+    #wedge.pulse { animation: wedgePulse .35s ease; }
+    @keyframes wedgePulse { from { opacity: .35; } to { opacity: 1; } }
+
+    .arrow {
+        font-size: 6vh; line-height: 1; color: var(--accent); cursor: pointer;
+        background: none; border: none; outline: none; padding: 0 3vh;
+        filter: drop-shadow(0 0 1.6vh rgba(255, 210, 74, .4));
+        transition: transform .12s ease, opacity .12s ease;
+    }
+    /* Greyed out AT her limit, rather than letting her keep pressing up and then failing
+       on confirm: the tile must never promise time she cannot pay for. */
+    .arrow:disabled { opacity: .18; filter: none; cursor: default; }
+    .arrow.press { transform: scale(1.35); }
+
+    .clockPanel { display: flex; flex-direction: column; align-items: center; gap: 2.4vh; }
+    #addMins {
+        font-size: 15vh; font-weight: 900; line-height: .9; color: var(--accent);
+        text-shadow: 0 0 5vh rgba(255, 210, 74, .35);
+    }
+    #payRow { font-size: 5.4vh; display: flex; align-items: center; gap: .6vh; }
+    #payRow .arrowTo { font-size: 4vh; opacity: .6; }
+    .obtns { display: flex; gap: 3vh; justify-content: center; margin-top: 1vh; }
+
     #status { position: fixed; bottom: 1vh; right: 2vh; font-size: 1.7vh; opacity: .25; }
 
     /* ================= responsive: tablets & phones =================
@@ -316,7 +374,6 @@
     @media (orientation: portrait) {
         :root {
             --tile: clamp(128px, 42vw, 210px);
-            --poster-h: clamp(192px, 63vw, 315px); /* 1.5 × --tile, keeps the 2:3 poster */
             --grid-gap: clamp(12px, 3.4vw, 26px);
         }
         html { scroll-padding-top: clamp(110px, 32vw, 190px); }
@@ -347,7 +404,7 @@
 
         .chore .icon { font-size: calc(var(--tile) * .42); }
         .chore .clipart { width: 62%; height: 62%; }
-        .chore .name, .title .name { font-size: clamp(12px, 3.2vw, 19px); }
+        .chore .name { font-size: clamp(12px, 3.2vw, 19px); }
         .badge { font-size: clamp(14px, 3.6vw, 23px); }
         .stateBadge { font-size: calc(var(--tile) * .4); }
 
@@ -359,6 +416,12 @@
         #overlayCost { font-size: clamp(26px, 8vw, 50px); margin-top: 2vh; }
         #overlayButtons { gap: 6vw; margin-top: 4vh; }
         .obtn { font-size: clamp(34px, 11vw, 64px); padding: 1.4vh 7vw; border-radius: 4vw; }
+
+        /* the clock and its readout stack instead of sitting side by side */
+        #clockOverlay { flex-direction: column; gap: clamp(10px, 3vw, 26px); }
+        .arrow { font-size: clamp(30px, 10vw, 60px); padding: 0 6vw; }
+        #addMins { font-size: clamp(48px, 17vw, 110px); }
+        #payRow { font-size: clamp(22px, 7vw, 44px); }
         #status { font-size: 12px; }
     }
 
@@ -376,7 +439,6 @@
     @media (orientation: landscape) and (max-height: 560px) {
         :root {
             --tile: max(120px, 20vh);
-            --poster-h: max(180px, 30vh);
             --grid-gap: max(12px, 2.4vh);
         }
         #kidName { font-size: clamp(22px, 5vh, 40px); }
@@ -408,17 +470,38 @@
         <div id="chores" class="grid"></div>
     </div>
 
-    <!-- "Keep watching this" — one tile, faced with the poster of whatever she had on.
-         It replaced the old abstract "+5 minutes" tiles: a spend that buys a picture she
-         recognises, rather than a unit of time she cannot feel. -->
-    <div id="timeSection" class="section hidden">
-        <div class="rowTitle">⏯️ <span class="pill spend">🐷 ➜ <span class="coin"></span></span></div>
-        <div id="timeTiles" class="grid"></div>
-    </div>
-
-    <div id="titleSection" class="section">
-        <div class="rowTitle">📺🍿 <span class="pill spend">🐷 ➜ <span class="coin"></span></span></div>
-        <div id="titles" class="grid"></div>
+    <!-- One spend control for the whole page: put a coin in the telly. What it costs is
+         not written on it, because the amount is not decided here — she picks that on the
+         clock, where it is a shape rather than a price. -->
+    <div class="section">
+        <div class="rowTitle">⏱️ <span class="pill spend">🐷 ➜ <span class="coin"></span> ➜ 📺</span></div>
+        <div class="grid">
+            <div class="tile" id="spendTile" tabindex="0" data-kind="spend" data-blocked="0">
+                <svg viewBox="0 0 120 118" aria-hidden="true">
+                    <defs>
+                        <linearGradient id="klGold" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0" stop-color="#ffe38a" /><stop offset="1" stop-color="#e8a512" />
+                        </linearGradient>
+                        <linearGradient id="klGlass" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0" stop-color="#31407f" /><stop offset="1" stop-color="#141c46" />
+                        </linearGradient>
+                    </defs>
+                    <g class="dropCoin">
+                        <circle cx="60" cy="15" r="13" fill="url(#klGold)" stroke="#c9880e" stroke-width="2.5" />
+                        <path d="M60 7l2.7 5.5 6.1.9-4.4 4.3 1 6.1L60 21l-5.4 2.8 1-6.1-4.4-4.3 6.1-.9z" fill="#c9880e" />
+                    </g>
+                    <rect x="44" y="34" width="32" height="7" rx="3.5" fill="#080b1e" stroke="rgba(255,255,255,.3)" stroke-width="1.6" />
+                    <rect x="10" y="40" width="100" height="66" rx="13" fill="#101637" stroke="rgba(255,255,255,.4)" stroke-width="3.5" />
+                    <path d="M34 106l-5 9M86 106l5 9" stroke="rgba(255,255,255,.4)" stroke-width="4" stroke-linecap="round" />
+                    <rect x="19" y="49" width="82" height="48" rx="8" fill="url(#klGlass)" />
+                    <circle cx="60" cy="73" r="18.5" fill="#0d1330" stroke="rgba(255,255,255,.45)" stroke-width="2" />
+                    <path d="M60 73L60 54.5A18.5 18.5 0 0 1 76 63.8Z" fill="rgba(255,210,74,.9)" />
+                    <line x1="60" y1="73" x2="60" y2="60" stroke="#fff" stroke-width="3" stroke-linecap="round" />
+                    <line x1="60" y1="73" x2="69" y2="77" stroke="#fff" stroke-width="2.6" stroke-linecap="round" />
+                    <circle cx="60" cy="73" r="2.4" fill="#ffd24a" />
+                </svg>
+            </div>
+        </div>
     </div>
 
     <div id="overlay">
@@ -426,6 +509,35 @@
             <div id="overlayArt"></div>
             <div id="overlayCost"></div>
             <div id="overlayButtons"></div>
+        </div>
+    </div>
+
+    <!-- The spend clock. Hands show the real time now; the gold wedge is the telly she
+         is about to buy, growing forward from the minute hand one coin at a time. -->
+    <div id="clockOverlay">
+        <div class="dial">
+            <button type="button" class="arrow" id="clockUp">▲</button>
+            <svg id="clockFace" viewBox="0 0 240 240" aria-hidden="true">
+                <circle class="face" cx="120" cy="120" r="105" />
+                <g id="clockTicks"></g>
+                <path id="wedge" d="" />
+                <path id="rimArc" d="" />
+                <line id="endHand" x1="120" y1="120" x2="120" y2="120" />
+                <circle id="endDot" cx="120" cy="120" r="7" />
+                <g id="clockNums"></g>
+                <line class="hand" id="hourHand" x1="120" y1="120" x2="120" y2="70" stroke-width="9" />
+                <line class="hand" id="minHand" x1="120" y1="120" x2="120" y2="45" stroke-width="6" />
+                <circle class="hub" cx="120" cy="120" r="6.5" />
+            </svg>
+            <button type="button" class="arrow" id="clockDown">▼</button>
+        </div>
+        <div class="clockPanel">
+            <div id="addMins"></div>
+            <div id="payRow"></div>
+            <div class="obtns">
+                <button type="button" class="obtn go" id="clockOk">👍</button>
+                <button type="button" class="obtn" id="clockNo">↩️</button>
+            </div>
         </div>
     </div>
     <div id="status"></div>
@@ -436,10 +548,6 @@
 
     var token = new URLSearchParams(location.search).get('token') || '';
     var state = null;          // latest coins/chores snapshot
-    var titles = [];           // accumulated library posters
-    var titlesTotal = 0;       // how many the child can access in total
-    var pageSize = 60;
-    var loadingMore = false;
     var overlayTimer = null;
     var lastCoins = null;
 
@@ -519,13 +627,6 @@
             out += '<span class="coin' + (i < have ? '' : ' missing') + '"></span>';
         }
         return out;
-    }
-
-    // The price badge, with its prefix kept in an attribute so a later affordability
-    // refresh can redraw the coins without rebuilding (and re-focusing) the whole tile.
-    function priceBadge(cost, prefix) {
-        return '<div class="badge" data-prefix="' + prefix + '">' +
-            prefix + priceCoins(cost, redeemable()) + '</div>';
     }
 
     var lastName = null;
@@ -655,126 +756,18 @@
         }
     }
 
-    // A poster is tappable whenever ANY coins are redeemable: if the price is higher
-    // than what's left today, the redeem is partial (she watches what today allows and
-    // finishes another day at the remaining-time price).
-    function titleTile(t, index) {
+    // The spend tile's state. There is exactly one of it now, so "which of these can I
+    // afford?" — the question the poster wall asked and a six-year-old could not answer —
+    // is gone: the tile is either open or locked, and the amount is chosen on the clock
+    // afterwards, against coins she can see.
+    function renderSpend() {
         var reason = lockReason();
         var blocked = reason !== null;
-        return '<div class="tile title' + (blocked ? ' disabled' : '') + (reason === 'moon' ? ' lockMoon' : '') +
-            '" tabindex="0"' +
-            ' data-kind="title" data-id="' + esc(t.ItemId) + '" data-index="' + index + '"' +
-            ' data-cost="' + t.CoinCost + '" data-blocked="' + (blocked ? '1' : '0') + '">' +
-            '<div class="posterWrap">' +
-            '<img class="poster" loading="lazy" src="kid/image/' + esc(t.ItemId) +
-                '?token=' + encodeURIComponent(token) + '" alt="" ' +
-                'onerror="this.style.visibility=\'hidden\'" />' +
-            (t.InProgress ? '<div class="prog"><span style="width:' + t.ProgressPct + '%;"></span></div>' : '') +
-            '</div>' +
-            '<div class="name">' + esc(t.Name) + '</div>' +
-            priceBadge(t.CoinCost, t.InProgress ? '▶ ' : '') +
-            '</div>';
-    }
-
-    var lastContinueSig = '';
-
-    // The tile that replaced the old abstract "+5 ⏱" tiles: the poster of whatever she
-    // was watching. Minutes are a unit a non-reader cannot feel, but "keep watching THIS"
-    // is a picture she can act on — and it means every spend on the page now buys a show,
-    // which is one rule instead of two.
-    function renderContinue() {
-        var section = document.getElementById('timeSection');
-        var grid = document.getElementById('timeTiles');
-        var c = state.Continue;
-        section.classList.toggle('hidden', !c);
-        if (!c) {
-            lastContinueSig = '';
-            grid.innerHTML = '';
-            return;
-        }
-
-        // Rebuild only on a real change: this runs on every poll, and re-writing the tile
-        // would drop the child's D-pad focus and restart the poster load.
-        var sig = JSON.stringify(c);
-        if (sig === lastContinueSig) { return; }
-        lastContinueSig = sig;
-
-        var active = document.activeElement;
-        var hadFocus = active && active.getAttribute &&
-            active.getAttribute('data-kind') === 'continue';
-        var reason = lockReason();
-        var blocked = reason !== null;
-
-        grid.innerHTML =
-            '<div class="tile title' + (blocked ? ' disabled' : '') +
-            (reason === 'moon' ? ' lockMoon' : '') + '" tabindex="0"' +
-            ' data-kind="continue" data-id="' + esc(c.ItemId) + '"' +
-            ' data-cost="' + c.CoinCost + '" data-blocked="' + (blocked ? '1' : '0') + '">' +
-            '<div class="posterWrap">' +
-            '<img class="poster" src="kid/image/' + esc(c.ItemId) +
-                '?token=' + encodeURIComponent(token) + '" alt="" ' +
-                'onerror="this.style.visibility=\'hidden\'" />' +
-            (c.InProgress ? '<div class="prog"><span style="width:' + c.ProgressPct + '%;"></span></div>' : '') +
-            '</div>' +
-            '<div class="name">' + esc(c.Name) + '</div>' +
-            priceBadge(c.CoinCost, '⏯ ') +
-            '</div>';
-
-        if (hadFocus) {
-            var again = document.querySelector('.tile[data-kind="continue"]');
-            if (again) { again.focus(); }
-        }
-    }
-
-    function renderTitlesFresh() {
-        var grid = document.getElementById('titles');
-        if (!titles.length) {
-            grid.innerHTML = '<div class="empty">🍿 …</div>';
-            return;
-        }
-        grid.innerHTML = titles.map(titleTile).join('') + moreTile();
-    }
-
-    function moreTile() {
-        return titles.length < titlesTotal
-            ? '<div id="more">⏬</div>'
-            : '';
-    }
-
-    // Refresh affordability on already-rendered tiles without rebuilding the grid, so a
-    // poll never yanks the child's D-pad focus mid-scroll. Redraws the price coins too:
-    // every approved chore changes which of them are solid and which are still hollow,
-    // and that is the whole signal telling her what she can have.
-    function remarkTitles() {
-        var reason = lockReason();
-        var have = redeemable();
-        var cheapest = null;
-        var cheapestCost = Infinity;
-
-        document.querySelectorAll('.tile[data-cost]').forEach(function (el) {
-            var cost = parseInt(el.getAttribute('data-cost'), 10) || 0;
-            var blocked = reason !== null;
-            el.classList.toggle('disabled', blocked);
-            el.classList.toggle('lockMoon', reason === 'moon');
-            el.setAttribute('data-blocked', blocked ? '1' : '0');
-            el.classList.remove('canBuy');
-
-            var badge = el.querySelector('.badge');
-            if (badge) {
-                badge.innerHTML = (badge.getAttribute('data-prefix') || '') + priceCoins(cost, have);
-            }
-
-            // Fully affordable, not just partially — the pulse must never point at
-            // something that will only buy her half of what the poster promises.
-            if (!blocked && cost <= have && cost < cheapestCost) {
-                cheapestCost = cost;
-                cheapest = el;
-            }
-        });
-
-        // Exactly one tile breathes, so a wall of locked posters always has one clear
-        // "this one, right now" instead of reading as a flat no.
-        if (cheapest) { cheapest.classList.add('canBuy'); }
+        var tile = document.getElementById('spendTile');
+        tile.classList.toggle('disabled', blocked);
+        tile.classList.toggle('lockMoon', reason === 'moon');
+        tile.classList.toggle('canBuy', !blocked);
+        tile.setAttribute('data-blocked', blocked ? '1' : '0');
     }
 
     // --------------------------------------------------------------- loading
@@ -811,9 +804,10 @@
         // would stop the page refreshing for good.
         if (inFlight) { schedulePoll(); return; }
         inFlight = true;
-        // Polls skip the library page (light=1) so they can run every few seconds —
-        // a parent's approve/reject or coin grant shows up almost immediately.
-        api(initial ? 'state' : 'state?light=1').then(function (s) {
+        // One cheap call, every few seconds: coins, chores and time only. No library
+        // query hides behind it any more, which is what lets the cadence stay this
+        // quick — a parent's approve/reject shows up on the TV almost immediately.
+        api('state').then(function (s) {
             inFlight = false;
             var prevCoins = lastCoins;
             var prevPending = pendingMap(state);
@@ -823,16 +817,10 @@
             renderToday();
             renderTime();
             renderChores();
-            renderContinue();
-            if (initial) {
-                titles = s.Titles || [];
-                titlesTotal = s.TitlesTotal || titles.length;
-                pageSize = s.PageSize || 60;
-                renderTitlesFresh();
-            }
-            // Always: an approved chore changes which prices she can cover, and that
-            // has to show on every tile already on screen, not just on new ones.
-            remarkTitles();
+            renderSpend();
+            // An approved chore can unlock the spend tile, and if she is standing on the
+            // clock right now it changes how far up ▲ still goes.
+            if (clockOpen) { renderAmount(); }
             if (initial) {
                 focusFirst();
             } else {
@@ -879,29 +867,6 @@
             sndNo();
             queueFlash('📨 ➜ 🤷', '', 2200);
         }
-    }
-
-    function loadMore() {
-        if (loadingMore || titles.length >= titlesTotal) { return; }
-        loadingMore = true;
-        var more = document.getElementById('more');
-        if (more) { more.classList.add('spin'); }
-        api('library?skip=' + titles.length + '&take=' + pageSize).then(function (r) {
-            var start = titles.length;
-            titles = titles.concat(r.Items || []);
-            titlesTotal = r.Total || titles.length;
-            // Append only the new tiles (don't rebuild — keeps focus + loaded images).
-            var grid = document.getElementById('titles');
-            var oldMore = document.getElementById('more');
-            if (oldMore) { oldMore.remove(); }
-            var html = (r.Items || []).map(function (t, i) { return titleTile(t, start + i); }).join('');
-            grid.insertAdjacentHTML('beforeend', html + moreTile());
-            loadingMore = false;
-        }).catch(function () {
-            loadingMore = false;
-            var m = document.getElementById('more');
-            if (m) { m.classList.remove('spin'); }
-        });
     }
 
     // ------------------------------------------------------- the exchange, drawn
@@ -962,23 +927,19 @@
         }, 820);
     }
 
-    // Standing on a spend tile previews what it would DO: a ghost segment on the TV
-    // meter, sized to the time those coins buy. She sees the trade before making it.
-    function previewSpend(tile) {
+    // Standing on the spend tile previews what it would DO: a ghost segment on the TV
+    // meter, sized to the time the clock will open on. She sees the trade before she
+    // even opens the clock — the same picture, one step earlier.
+    function previewSpend(coins) {
         var ghost = document.getElementById('meterGhost');
         if (!ghost) { return; }
 
-        var raw = tile ? tile.getAttribute('data-cost') : null;
         var budget = state ? state.TimeBudgetSeconds : 0;
         var left = state ? state.TimeRemainingSeconds : null;
-        if (raw === null || !state || !budget || left === null || left === undefined ||
-            tile.getAttribute('data-blocked') === '1') {
+        if (!state || !budget || left === null || left === undefined || coins <= 0) {
             ghost.style.width = '0%';
             return;
         }
-
-        var coins = Math.min(parseInt(raw, 10) || 0, redeemable());
-        if (coins <= 0) { ghost.style.width = '0%'; return; }
 
         var fillPct = Math.min(100, left * 100 / budget);
         var addPct = coins * state.CoinMinutes * 60 * 100 / budget;
@@ -1037,6 +998,153 @@
         }, ms || 2500);
     }
 
+    // ------------------------------------------------------------- the spend clock
+    // "How much telly?" asked on a clock face instead of in minutes. The gold wedge
+    // starts at the minute hand and sweeps forward, so the answer is a SHAPE she can
+    // read and compare before she can do arithmetic — and it is the same gold as the
+    // coins paying for it. ▲/▼ move it one coin at a time, and it opens already set to
+    // the usual amount so the common answer is a single 👍.
+    var clockOpen = false;
+    var clockCoins = 0;
+    var clockTimer = null;
+
+    // A wedge longer than one full turn wraps onto itself and stops meaning anything,
+    // so the clock never offers more than an hour however rich she is.
+    function maxSpendCoins() {
+        var perHour = Math.max(1, Math.floor(60 / Math.max(1, state.CoinMinutes)));
+        return Math.max(1, Math.min(redeemable(), perHour));
+    }
+
+    function defaultSpendCoins() {
+        return Math.min(Math.max(1, state.DefaultSpendCoins || 3), maxSpendCoins());
+    }
+
+    // Clock angles run from 12 o'clock, clockwise — the same way the hands do.
+    function clockPoint(r, deg) {
+        var a = (deg - 90) * Math.PI / 180;
+        return [120 + (r * Math.cos(a)), 120 + (r * Math.sin(a))];
+    }
+
+    // All twelve numerals, not just 12/3/6/9: she is learning to read this face, and the
+    // wedge is easier to place against a complete one. Built once — it never changes.
+    function buildClockFace() {
+        var nums = '';
+        var ticks = '';
+        var i;
+        for (i = 1; i <= 12; i++) {
+            var n = clockPoint(84, i * 30);
+            nums += '<text class="num" x="' + n[0].toFixed(1) + '" y="' + n[1].toFixed(1) + '">' + i + '</text>';
+        }
+        for (i = 0; i < 60; i++) {
+            if (i % 5 === 0) { continue; }
+            var a = clockPoint(103, i * 6);
+            var b = clockPoint(98, i * 6);
+            ticks += '<line class="tick" x1="' + a[0].toFixed(1) + '" y1="' + a[1].toFixed(1) +
+                '" x2="' + b[0].toFixed(1) + '" y2="' + b[1].toFixed(1) + '" />';
+        }
+        document.getElementById('clockNums').innerHTML = nums;
+        document.getElementById('clockTicks').innerHTML = ticks;
+    }
+
+    // Hands = the real time now; wedge = from now forward by what she is buying. Re-run
+    // every second while the clock is open so "now" stays honest under her.
+    function renderClockHands() {
+        var now = new Date();
+        var mins = now.getMinutes() + (now.getSeconds() / 60);
+        var minAngle = mins * 6;
+        var hourAngle = ((now.getHours() % 12) * 30) + (mins * 0.5);
+
+        var hh = clockPoint(58, hourAngle);
+        var mh = clockPoint(82, minAngle);
+        var hourHand = document.getElementById('hourHand');
+        var minHand = document.getElementById('minHand');
+        hourHand.setAttribute('x2', hh[0].toFixed(1));
+        hourHand.setAttribute('y2', hh[1].toFixed(1));
+        minHand.setAttribute('x2', mh[0].toFixed(1));
+        minHand.setAttribute('y2', mh[1].toFixed(1));
+
+        var sweep = Math.min(clockCoins * state.CoinMinutes * 6, 359.9);
+        var end = minAngle + sweep;
+        var large = sweep > 180 ? 1 : 0;
+        var w1 = clockPoint(92, minAngle);
+        var w2 = clockPoint(92, end);
+        document.getElementById('wedge').setAttribute('d', sweep <= 0 ? '' :
+            'M120 120L' + w1[0].toFixed(1) + ' ' + w1[1].toFixed(1) +
+            'A92 92 0 ' + large + ' 1 ' + w2[0].toFixed(1) + ' ' + w2[1].toFixed(1) + 'Z');
+
+        // A fat gold arc on the rim as well as the fill: on a TV seen from the sofa the
+        // rim is what carries at a distance.
+        var r1 = clockPoint(99, minAngle);
+        var r2 = clockPoint(99, end);
+        document.getElementById('rimArc').setAttribute('d', sweep <= 0 ? '' :
+            'M' + r1[0].toFixed(1) + ' ' + r1[1].toFixed(1) +
+            'A99 99 0 ' + large + ' 1 ' + r2[0].toFixed(1) + ' ' + r2[1].toFixed(1));
+
+        // The "telly stops here" hand, so the end of the wedge is a place on the clock.
+        var e = clockPoint(92, end);
+        var endHand = document.getElementById('endHand');
+        var endDot = document.getElementById('endDot');
+        endHand.setAttribute('x2', e[0].toFixed(1));
+        endHand.setAttribute('y2', e[1].toFixed(1));
+        endDot.setAttribute('cx', e[0].toFixed(1));
+        endDot.setAttribute('cy', e[1].toFixed(1));
+        endHand.style.opacity = sweep > 0 ? '.9' : '0';
+        endDot.style.opacity = sweep > 0 ? '1' : '0';
+    }
+
+    function renderAmount() {
+        if (!state) { return; }
+        // No unit next to the number: the wedge behind it IS the unit, and a second
+        // symbol only competes with it.
+        document.getElementById('addMins').textContent = '+' + (clockCoins * state.CoinMinutes);
+        // What it costs, in coins matched against what she has — the same solid/hollow
+        // language the old price badges used, now asked once instead of on every poster.
+        document.getElementById('payRow').innerHTML =
+            priceCoins(clockCoins, redeemable()) + '<span class="arrowTo">➜</span>📺';
+
+        var max = maxSpendCoins();
+        document.getElementById('clockUp').disabled = clockCoins >= max;
+        document.getElementById('clockDown').disabled = clockCoins <= 1;
+        renderClockHands();
+    }
+
+    function bumpSpend(dir) {
+        var next = clockCoins + dir;
+        if (next < 1 || next > maxSpendCoins()) { sndNo(); return; }
+        clockCoins = next;
+        sndMove();
+
+        var btn = document.getElementById(dir > 0 ? 'clockUp' : 'clockDown');
+        btn.classList.add('press');
+        setTimeout(function () { btn.classList.remove('press'); }, 130);
+
+        var wedge = document.getElementById('wedge');
+        wedge.classList.remove('pulse');
+        void wedge.getBoundingClientRect();
+        wedge.classList.add('pulse');
+        renderAmount();
+    }
+
+    function openClock() {
+        if (!state || redeemable() <= 0) { sndNo(); lockFlash(lockReason() || 'coins'); return; }
+        clockCoins = defaultSpendCoins();
+        clockOpen = true;
+        document.getElementById('clockOverlay').classList.add('open');
+        renderAmount();
+        // The hands must keep moving while she decides, or the wedge starts from a lie.
+        if (clockTimer) { clearInterval(clockTimer); }
+        clockTimer = setInterval(renderClockHands, 1000);
+        document.getElementById('clockOk').focus();
+    }
+
+    function closeClock() {
+        clockOpen = false;
+        document.getElementById('clockOverlay').classList.remove('open');
+        if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
+        var tile = document.getElementById('spendTile');
+        if (tile) { tile.focus(); }
+    }
+
     // --------------------------------------------------------------- actions
     function onActivate(tile) {
         var kind = tile.getAttribute('data-kind');
@@ -1045,7 +1153,7 @@
         if (tile.getAttribute('data-blocked') === '1') {
             sndNo();
             // For a locked tile, tell her *why* in pictures: empty jar vs spent-for-today.
-            if (kind === 'title' || kind === 'continue') { lockFlash(lockReason() || 'coins'); }
+            if (kind === 'spend') { lockFlash(lockReason() || 'coins'); }
             return;
         }
         sndSelect();
@@ -1063,32 +1171,8 @@
                     { label: '👍', go: true, action: function () { claim(id); } },
                     { label: '👎', action: closeOverlay },
                 ]);
-        } else if (kind === 'continue') {
-            var cont = state.Continue;
-            if (!cont) { return; }
-            var contCharge = Math.min(cont.CoinCost, redeemable());
-            openOverlay(
-                '<img src="kid/image/' + esc(cont.ItemId) + '?token=' + encodeURIComponent(token) + '" alt="" />',
-                priceCoins(contCharge, contCharge) + ' ➜ 📺 ?',
-                [
-                    { label: '⏯', go: true, action: spendContinue },
-                    { label: '↩️', action: closeOverlay },
-                ]);
-        } else if (kind === 'title') {
-            var title = titles.filter(function (t) { return t.ItemId === id; })[0];
-            if (!title) { return; }
-            // Partial redeem: today's allowance is smaller than the price, so she spends
-            // what she can and gets that many minutes into the movie.
-            var charge = Math.min(title.CoinCost, redeemable());
-            var partial = charge < title.CoinCost;
-            openOverlay(
-                '<img src="kid/image/' + esc(id) + '?token=' + encodeURIComponent(token) + '" alt="" />',
-                priceCoins(charge, charge) + ' ➜ ' + (title.InProgress ? '⏯' : '▶️') +
-                    (partial ? ' ' + (charge * state.CoinMinutes) + ' ⏱' : '') + ' ?',
-                [
-                    { label: title.InProgress ? '⏯' : '▶️', go: true, action: function () { redeem(id); } },
-                    { label: '↩️', action: closeOverlay },
-                ]);
+        } else if (kind === 'spend') {
+            openClock();
         }
     }
 
@@ -1107,48 +1191,30 @@
         }).catch(function () { sndNo(); flashOverlay('⚠️', '', 1800); });
     }
 
-    // While something is genuinely playing, buy plain time: redeeming the title would
-    // re-issue a Play command and yank her back to its resume point mid-episode. With
-    // nothing playing, redeem the title so the spend also STARTS it — the coins have to
-    // visibly produce television, or the exchange has no point.
-    function spendContinue() {
-        var c = state.Continue;
-        if (!c) { return; }
-        var charge = Math.min(c.CoinCost, redeemable());
-        if (charge <= 0) { sndNo(); lockFlash(lockReason() || 'coins'); return; }
-        if (c.NowPlaying) { redeemTime(charge); } else { redeem(c.ItemId); }
-    }
-
-    function redeem(itemId) {
-        api('redeem?itemId=' + encodeURIComponent(itemId), 'POST').then(function (r) {
+    // The one spend on the page: N coins become N × CoinMinutes of telly.
+    // `resume=1` asks the server to put the last thing she watched back on, but only if
+    // nothing is playing — the coins have to visibly produce television, and re-issuing
+    // Play over something already running would yank her back to its resume point.
+    function spendCoins(coins) {
+        api('time?coins=' + coins + '&resume=1', 'POST').then(function (r) {
             if (r.Error) {
                 sndNo();
+                // Close first: the flash card sits *under* the clock overlay, so leaving
+                // the clock up would swallow the only explanation she gets.
+                closeClock();
                 // balance => empty jar (do chores); dailycap => saved coins but today's allowance is spent.
                 if (r.Error === 'dailycap') { flashOverlay('🌙💤', '☀️ tomorrow', 2200, true); }
                 else { flashOverlay(coin() + '🔒', '🧹✨ ➜ ' + coin(), 2200, true); }
-            } else {
-                // Get out of the way and let her watch the coins become TV time. Only the
-                // things she still has to ACT on stay as a card: go open Jellyfin, or the
-                // moon saying the rest of this film waits for tomorrow.
-                closeOverlay();
-                spendAnimation(r.CoinsSpent || 1, function () {
-                    if (!r.Played) { sndYay(); flashOverlay('🎉 📺 👆' + (r.Partial ? ' 🌙' : ''), '', 4200); }
-                    else if (r.Partial) { flashOverlay('▶️ 🌙', '', 2200); }
-                });
+                return;
             }
-        }).catch(function () { sndNo(); flashOverlay('⚠️', '', 1800); });
-    }
 
-    function redeemTime(coins) {
-        api('time?coins=' + coins, 'POST').then(function (r) {
-            if (r.Error) {
-                sndNo();
-                if (r.Error === 'dailycap') { flashOverlay('🌙💤', '☀️ tomorrow', 2200, true); }
-                else { flashOverlay(coin() + '🔒', '🧹✨ ➜ ' + coin(), 2200, true); }
-            } else {
-                closeOverlay();
-                spendAnimation(coins);
-            }
+            // Get out of the way and let her watch the coins become TV time. The only
+            // card left is the one she still has to ACT on: nothing resumed by itself,
+            // so go and press play.
+            closeClock();
+            spendAnimation(r.CoinsSpent || coins, function () {
+                if (!r.Played) { sndYay(); flashOverlay('🎉 📺 👆', '', 3800); }
+            });
         }).catch(function () { sndNo(); flashOverlay('⚠️', '', 1800); });
     }
 
@@ -1159,26 +1225,19 @@
     var attractShown = false;
 
     // The single moment the "why" is self-evident: the TV just went flat and she still
-    // has coins. Asking then — rather than leaving a gold row she has to reason her way
+    // has coins. Asking then — rather than leaving a gold tile she has to reason her way
     // to — is the difference between a shop and an offer. Armed once per flat battery,
-    // so it asks when it matters and then shuts up.
+    // so it asks when it matters and then shuts up. The offer IS the clock: it opens on
+    // the usual amount, so the whole answer is one 👍.
     function maybePromptOutOfTime() {
         var left = state.TimeRemainingSeconds;
         if (left === null || left === undefined) { return; }
         if (left > 0) { outOfTimePrompted = false; return; }
-        if (outOfTimePrompted || redeemable() <= 0 || !state.Continue) { return; }
-        if (document.getElementById('overlay').classList.contains('open')) { return; }
+        if (outOfTimePrompted || redeemable() <= 0) { return; }
+        if (clockOpen || document.getElementById('overlay').classList.contains('open')) { return; }
 
         outOfTimePrompted = true;
-        sndSelect();
-        var charge = Math.min(state.Continue.CoinCost, redeemable());
-        openOverlay(
-            '🐷 ➜ 📺',
-            priceCoins(charge, charge) + ' ➜ 📺 ?',
-            [
-                { label: '👍', go: true, action: spendContinue },
-                { label: '↩️', action: closeOverlay },
-            ]);
+        openClock();
     }
 
     // Left alone, the page teaches itself: chores fill the piggy, the piggy fills the
@@ -1192,7 +1251,7 @@
     }
 
     function showAttract() {
-        if (attractShown || document.hidden) { return; }
+        if (attractShown || document.hidden || clockOpen) { return; }
         if (document.getElementById('overlay').classList.contains('open')) { return; }
         attractShown = true;
         attractOpen = true;
@@ -1205,10 +1264,16 @@
     }
 
     // --------------------------------------------- D-pad spatial navigation
+    // Whatever is on top owns the D-pad: the clock's two buttons, else the card's
+    // buttons, else the tiles on the page itself.
     function focusables() {
+        if (clockOpen) {
+            return [document.getElementById('clockOk'), document.getElementById('clockNo')];
+        }
         var overlay = document.getElementById('overlay');
-        var scope = overlay.classList.contains('open') ? overlay : document;
-        return Array.prototype.slice.call(scope.querySelectorAll('.tile, .obtn'));
+        return overlay.classList.contains('open')
+            ? Array.prototype.slice.call(overlay.querySelectorAll('.obtn'))
+            : Array.prototype.slice.call(document.querySelectorAll('.tile'));
     }
 
     function focusFirst() {
@@ -1217,14 +1282,6 @@
             els.indexOf(document.activeElement) < 0)) {
             els[0].focus();
         }
-    }
-
-    // When the D-pad approaches the end of the loaded posters, fetch the next page so
-    // the grid feels endless (it's her whole library).
-    function maybeLoadMore(el) {
-        if (!el || el.getAttribute('data-kind') !== 'title') { return; }
-        var idx = parseInt(el.getAttribute('data-index'), 10) || 0;
-        if (idx >= titles.length - 12) { loadMore(); }
     }
 
     function move(dir) {
@@ -1252,9 +1309,6 @@
             best.focus();
             best.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
             sndMove();
-            maybeLoadMore(best);
-        } else if ((dir === 'down' || dir === 'right')) {
-            loadMore(); // at the very end — pull more in
         }
     }
 
@@ -1263,6 +1317,34 @@
         // Any button dismisses the attract strip — it must never sit between her and the
         // thing she just pressed a direction towards.
         if (attractOpen) { closeOverlay(); e.preventDefault(); return; }
+
+        // On the clock, up/down are the ANSWER, not navigation: they move the wedge one
+        // coin at a time. Left/right pick between 👍 and ↩️, which is the only other
+        // choice the screen offers.
+        if (clockOpen) {
+            switch (e.key) {
+                case 'ArrowUp': bumpSpend(1); e.preventDefault(); break;
+                case 'ArrowDown': bumpSpend(-1); e.preventDefault(); break;
+                case 'ArrowLeft': move('left'); e.preventDefault(); break;
+                case 'ArrowRight': move('right'); e.preventDefault(); break;
+                case 'Enter':
+                case ' ':
+                    if (document.activeElement === document.getElementById('clockNo')) {
+                        sndSelect();
+                        closeClock();
+                    } else {
+                        sndSelect();
+                        spendCoins(clockCoins);
+                    }
+                    e.preventDefault();
+                    break;
+                case 'Escape':
+                case 'Backspace':
+                case 'GoBack': closeClock(); e.preventDefault(); break;
+                default: break;
+            }
+            return;
+        }
 
         var overlayOpen = document.getElementById('overlay').classList.contains('open');
         switch (e.key) {
@@ -1288,15 +1370,26 @@
         resetIdle();
         if (attractOpen) { closeOverlay(); return; }
         var tile = e.target.closest ? e.target.closest('.tile') : null;
-        if (tile) { onActivate(tile); return; }
-        if (e.target.closest && e.target.closest('#more')) { loadMore(); }
+        if (tile) { onActivate(tile); }
     });
 
-    // Focusing a spend tile previews it on the TV meter; leaving it clears the preview.
+    // Standing on the spend tile previews the usual amount on the TV meter, so the trade
+    // is visible one step before the clock even opens; leaving it clears the preview.
     document.addEventListener('focusin', function (e) {
-        previewSpend(e.target && e.target.closest ? e.target.closest('.tile') : null);
+        var tile = e.target && e.target.closest ? e.target.closest('#spendTile') : null;
+        previewSpend(tile && tile.getAttribute('data-blocked') !== '1' && state
+            ? defaultSpendCoins()
+            : 0);
     });
-    document.addEventListener('focusout', function () { previewSpend(null); });
+    document.addEventListener('focusout', function () { previewSpend(0); });
+
+    // The clock's own controls. Direct handlers (not the page-wide tile click above):
+    // these are buttons on an overlay, not tiles in the grid.
+    document.getElementById('clockUp').onclick = function () { bumpSpend(1); };
+    document.getElementById('clockDown').onclick = function () { bumpSpend(-1); };
+    document.getElementById('clockOk').onclick = function () { sndSelect(); spendCoins(clockCoins); };
+    document.getElementById('clockNo').onclick = function () { sndSelect(); closeClock(); };
+    buildClockFace();
 
     // Every way the page can come back to the front pulls fresh state immediately.
     // 'pageshow' covers a bfcache restore (which replays a snapshot of the OLD numbers),

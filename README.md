@@ -183,9 +183,12 @@ through the normal bonus mechanism). A TV-friendly, **picture-only kid page**
 (`/KidsLimit/kid?token=…`, per-kid token from settings) lets a non-reading
 child claim chores (emoji tiles → parent approves on the dashboard, with push
 notifications to your phone via ntfy / Pushover / Gotify / Discord / Slack /
-Telegram / Apprise API / generic webhook) and redeem coins by picking the
-poster of a favourite title — the plugin grants the time and (best effort)
-starts playback on her active session. `android-tv/` contains a minimal
+Telegram / Apprise API / generic webhook) and spend coins on watch time by
+answering "how much telly?" on a **big analog clock**: the hands show the real
+time, a gold wedge sweeps forward by the time she is buying, ▲/▼ move it one
+coin at a time, and it opens already set to the amount you configure (default
+3 coins = 15 minutes). Confirming grants the time and (best effort) resumes
+what she was watching. `android-tv/` contains a minimal
 sideloadable WebView wrapper so the kid page is an app on the TV launcher.
 Design, rules (bank cap, daily redeem cap, midnight refund) and details:
 [`REWARDS.md`](REWARDS.md).
