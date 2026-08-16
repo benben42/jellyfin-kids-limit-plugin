@@ -209,13 +209,16 @@ step, no framework, no dependencies. Changing UI means editing the embedded HTML
   to `SettingsDto`, `SettingsResponseDto`, and `SettingsController.SaveSettings` (with
   sanitising) to be editable there — not just to the admin config page.
 - `Web/kid.html` targets a non-reading child on a TV remote: picture-only tiles, D-pad
-  arrow-key focus handling, focus preserved across refreshes. `?light=true` on
-  `/KidsLimit/kid/state` skips the expensive library page for frequent polling.
-  Spending is taught rather than labelled: prices render as coins matched against her
-  balance (solid = affordable, `.missing` = still needed), a spend animates coins from
-  the piggy chip into the TV meter, and focusing a spend tile previews the gain as a
-  ghost segment on that meter. Everything spendable is a poster — there are no
-  abstract "+N minutes" tiles. All polled endpoints send `no-store` and the poll loop
+  arrow-key focus handling, focus preserved across refreshes. `/KidsLimit/kid/state` is
+  deliberately cheap (no library query at all), which is what lets it poll every few
+  seconds. Spending is one tile — a coin dropping into a telly — which opens the **spend
+  clock**: a real analog face whose gold wedge sweeps forward from the minute hand by the
+  time being bought, ▲/▼ = ±1 coin, opening at `DefaultSpendCoins`. Time as a shape is
+  readable before arithmetic is; the poster wall it replaced asked a different sum per
+  tile and a six-year-old could not convert. Prices still render as coins matched against
+  her balance (solid = affordable, `.missing` = still needed), a spend animates coins from
+  the piggy chip into the TV meter, and focusing the spend tile previews the gain as a
+  ghost segment on that meter. All polled endpoints send `no-store` and the poll loop
   re-arms itself per response (Android freezes backgrounded timers); anything that
   changes behind the child's back — a parent approving a chore — announces itself.
 - Known duplication to keep in sync: `SUGGESTED_CHORES` in `configPage.html` must mirror

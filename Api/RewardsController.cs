@@ -29,8 +29,6 @@ namespace Jellyfin.Plugin.KidsLimit.Api;
 public class RewardsController : ControllerBase
 {
     private const int LedgerTailLength = 40;
-    private const int LibraryPageSize = 60;
-    private const int RecentFrontMax = 20;
 
     private readonly RewardsService _rewards;
     private readonly WalletStore _wallets;
@@ -485,16 +483,20 @@ public class RewardsController : ControllerBase
         return Content(reader.ReadToEnd(), "text/html");
     }
 
-    /// <summary>Gets everything the kid page renders: coins, chores, reference titles, time.</summary>
-    /// <param name="light">
-    /// True skips the (comparatively expensive) library page so the kid page can poll
-    /// coins/chores frequently — a parent's approve/reject then shows up within seconds.
-    /// </param>
+    /// <summary>
+    /// Gets everything the kid page renders: coins, chores and her remaining TV time.
+    /// <para>
+    /// Deliberately cheap — no library queries at all. The page polls this every few
+    /// seconds so a parent's approve/reject shows up on the TV within seconds, and since
+    /// the child now spends coins on a clock rather than on posters, nothing here needs
+    /// the library. (The older poster grid made this the expensive call on the page.)
+    /// </para>
+    /// </summary>
     /// <param name="token">The per-user kid token.</param>
     /// <returns>The kid page state.</returns>
     [HttpGet("kid/state")]
     [Produces("application/json")]
-    public ActionResult<object> KidState([FromQuery] bool light = false, [FromQuery] string? token = null)
+    public ActionResult<object> KidState([FromQuery] string? token = null)
     {
         var kid = ResolveKid(token);
         if (kid is null)
@@ -567,55 +569,21 @@ public class RewardsController : ControllerBase
             }
         }
 
-        // Watch options are the kid's OWN accessible library as posters (respecting their
-        // Jellyfin library access + parental rating), so it never looks like "only these
-        // few shows". The first page ships with the state; more pages come from kid/library.
-        var (titles, titlesTotal) = light
-            ? (new List<object>(), 0)
-            : LibraryPage(kid.Value.Guid, config, 0, LibraryPageSize);
-
         return new
         {
             kid.Value.Name,
-            Continue = BuildContinue(config, kid.Value.Guid),
             CoinBalance = wallet.CoinBalance,
             CoinMinutes = Math.Max(1, config.CoinMinutes),
             RedeemableNow = redeemableNow,
             CoinsRedeemedToday = redeemedToday,
             MaxRedeemCoinsPerDay = config.MaxRedeemCoinsPerDay,
+
+            // Where the spend clock's hand starts, so the usual amount is one "yes" away.
+            DefaultSpendCoins = Math.Max(1, config.DefaultSpendCoins),
             TimeRemainingSeconds = timeRemaining,
             TimeBudgetSeconds = timeBudget,
             Chores = chores,
-            Titles = titles,
-            TitlesTotal = titlesTotal,
-            PageSize = LibraryPageSize,
         };
-    }
-
-    /// <summary>
-    /// Returns a page of the kid's accessible library as poster tiles, so the watch grid
-    /// can lazily grow beyond the first page shipped with <see cref="KidState"/>.
-    /// </summary>
-    /// <param name="skip">How many items to skip.</param>
-    /// <param name="take">How many items to return (clamped).</param>
-    /// <param name="token">The per-user kid token.</param>
-    /// <returns>The page of poster tiles plus the total item count.</returns>
-    [HttpGet("kid/library")]
-    [Produces("application/json")]
-    public ActionResult<object> KidLibrary(
-        [FromQuery] int skip = 0,
-        [FromQuery] int take = LibraryPageSize,
-        [FromQuery] string? token = null)
-    {
-        var kid = ResolveKid(token);
-        if (kid is null)
-        {
-            return Unauthorized();
-        }
-
-        NoStore();
-        var (items, total) = LibraryPage(kid.Value.Guid, Config, skip, take);
-        return new { Items = items, Total = total };
     }
 
     /// <summary>Kid claims a chore (goes to the parent's pending queue).</summary>
@@ -638,16 +606,24 @@ public class RewardsController : ControllerBase
     }
 
     /// <summary>
-    /// Kid redeems coins as plain extra watch time — no title attached. Powers the ⏳
-    /// "more time" tiles on the kid page, e.g. to keep watching whatever is already
-    /// playing on the TV.
+    /// Kid redeems coins as plain extra watch time — no title attached. This is what the
+    /// kid page's spend clock buys: she picks an amount of time on a clock face, and these
+    /// are the minutes it grants.
     /// </summary>
     /// <param name="coins">Coins to spend (validated against balance and the daily cap).</param>
+    /// <param name="resume">
+    /// True asks the server to also put the last thing she watched back on, but only when
+    /// nothing is playing — see <see cref="TryResumeLastAsync"/>. The kid page always asks,
+    /// so a spend produces television rather than just a bigger number.
+    /// </param>
     /// <param name="token">The per-user kid token.</param>
-    /// <returns>The outcome: error, coins left, seconds granted.</returns>
+    /// <returns>The outcome: error, coins left, seconds granted, whether playback started.</returns>
     [HttpPost("kid/time")]
     [Produces("application/json")]
-    public ActionResult<object> KidExtraTime([FromQuery] int coins, [FromQuery] string? token = null)
+    public async Task<ActionResult<object>> KidExtraTime(
+        [FromQuery] int coins,
+        [FromQuery] bool resume = false,
+        [FromQuery] string? token = null)
     {
         var kid = ResolveKid(token);
         if (kid is null)
@@ -660,8 +636,15 @@ public class RewardsController : ControllerBase
             return BadRequest("coins must be positive.");
         }
 
-        var outcome = _rewards.Redeem(Config, IdN(kid.Value.Guid), coins, "Extra time");
-        return new { outcome.Error, outcome.CoinBalance, outcome.SecondsGranted };
+        var config = Config;
+        var outcome = _rewards.Redeem(config, IdN(kid.Value.Guid), coins, "Extra time");
+
+        // Only after the coins actually left the wallet: never start playback she has not
+        // paid for (and the time she just bought is what keeps it running).
+        var played = outcome.Error is null && resume
+            && await TryResumeLastAsync(config, kid.Value.Guid).ConfigureAwait(false);
+
+        return new { outcome.Error, outcome.CoinBalance, outcome.SecondsGranted, outcome.CoinsSpent, Played = played };
     }
 
     /// <summary>
@@ -874,69 +857,7 @@ public class RewardsController : ControllerBase
     private static string IdN(Guid guid) => guid.ToString("N", CultureInfo.InvariantCulture);
 
     /// <summary>
-    /// Builds a page of the kid's accessible movies/series as priced poster tiles. Passing
-    /// the user to the query makes Jellyfin apply that user's library access and parental
-    /// rating, so only content the child is allowed to see comes back.
-    /// What she watched last comes first — movies and series MIXED by real recency (so the
-    /// thing she wants to finish sits up front, whatever it is) — then the rest
-    /// alphabetically.
-    /// </summary>
-    private (List<object> Items, int Total) LibraryPage(Guid userGuid, PluginConfiguration config, int skip, int take)
-    {
-        var user = _userManager.GetUserById(userGuid);
-        if (user is null)
-        {
-            return (new List<object>(), 0);
-        }
-
-        skip = Math.Max(0, skip);
-        take = Math.Clamp(take, 1, 200);
-
-        var front = RecentlyWatchedFront(user);
-
-        var query = new InternalItemsQuery(user)
-        {
-            IncludeItemTypes = new[] { BaseItemKind.Movie, BaseItemKind.Series },
-            Recursive = true,
-            IsVirtualItem = false,
-            ImageTypes = new[] { ImageType.Primary }, // only items with a poster to tap
-            ExcludeItemIds = front.Select(i => i.Id).ToArray(),
-            // SortOrder moved to Jellyfin.Database.Implementations in 10.11 (same
-            // relocation noted for the User entity); fully-qualify so we don't add a
-            // brittle using.
-            OrderBy = new[]
-            {
-                (ItemSortBy.SortName, Jellyfin.Database.Implementations.Enums.SortOrder.Ascending),
-            },
-            StartIndex = Math.Max(0, skip - front.Count),
-            Limit = take,
-        };
-
-        var result = _libraryManager.GetItemsResult(query);
-        var items = front.Skip(skip).Take(take)
-            .Concat(result.Items)
-            .Take(take)
-            .Select(item => _rewards.BuildTitle(config, item, user))
-            .Where(t => t is not null)
-            .Select(t => (object)new
-            {
-                ItemId = t!.ItemId.ToString("N", CultureInfo.InvariantCulture),
-                t.Name,
-                t.IsSeries,
-                t.RuntimeMinutes,
-                t.CoinCost,
-                t.FullCoinCost,
-                t.RemainingMinutes,
-                t.InProgress,
-                t.ProgressPct,
-            })
-            .ToList();
-
-        return (items, front.Count + result.TotalRecordCount);
-    }
-
-    /// <summary>
-    /// The recently-watched titles that lead the watch grid, movies and series mixed.
+    /// The kid's most recently watched titles, movies and series mixed.
     /// Sorting Movie+Series by <see cref="ItemSortBy.DatePlayed"/> can't do this: a series
     /// item never gets a play date of its own (only its episodes do), so every series would
     /// sink into the alphabetical tail while movies float. Instead we ask for recently
@@ -944,14 +865,11 @@ public class RewardsController : ControllerBase
     /// first <paramref name="max"/> distinct titles that have a poster.
     /// </summary>
     /// <param name="user">The kid's Jellyfin user.</param>
-    /// <param name="max">
-    /// How many titles are wanted. The "keep watching" tile asks for exactly one, which
-    /// keeps the query small enough to run on every poll of <see cref="KidState"/>.
-    /// </param>
+    /// <param name="max">How many titles are wanted (the query asks for headroom above it).</param>
     /// <returns>The leading titles, most recently watched first.</returns>
     private List<BaseItem> RecentlyWatchedFront(
         Jellyfin.Database.Implementations.Entities.User user,
-        int max = RecentFrontMax)
+        int max)
     {
         var recent = _libraryManager.GetItemList(new InternalItemsQuery(user)
         {
@@ -999,51 +917,40 @@ public class RewardsController : ControllerBase
     }
 
     /// <summary>
-    /// The single thing the kid is most likely to want to spend coins on, faced with its
-    /// own poster: whatever is playing on her session right now, else the last thing she
-    /// watched. This is what replaced the old abstract "+5 minutes" tiles — a picture of
-    /// a show is something a non-reader can act on, a unit of time is not.
+    /// Best-effort "and put it back on": after the kid buys time on the spend clock with
+    /// nothing playing, resumes the last thing she watched where she left off.
     /// <para>
-    /// <c>NowPlaying</c> decides which way the kid page spends: while something is
-    /// actually playing it buys plain extra time (leaving playback alone), otherwise it
-    /// redeems the title and starts it.
+    /// The coins have to visibly produce television or the exchange has no point — she
+    /// pays, the TV stays black, and nothing taught her what the coins did. Silent when
+    /// something is already playing (re-issuing Play would yank her back to the resume
+    /// point mid-episode) and silent when there is nothing to resume.
     /// </para>
     /// </summary>
     /// <param name="config">Plugin config.</param>
     /// <param name="userGuid">The kid's Jellyfin user.</param>
-    /// <returns>The tile payload, or null when there is nothing to continue.</returns>
-    private object? BuildContinue(PluginConfiguration config, Guid userGuid)
+    /// <returns>True when playback was actually started.</returns>
+    private async Task<bool> TryResumeLastAsync(PluginConfiguration config, Guid userGuid)
     {
         var user = _userManager.GetUserById(userGuid);
-        if (user is null)
+        if (user is null || _rewards.NowPlayingFor(userGuid) is not null)
         {
-            return null;
+            return false;
         }
 
-        var playing = _rewards.NowPlayingFor(userGuid);
-
-        // Only the fallback costs a library query, and it asks for exactly one title.
-        var item = playing ?? RecentlyWatchedFront(user, 1).FirstOrDefault();
+        // Exactly one title, so the query stays small — this runs only on a spend.
+        var item = RecentlyWatchedFront(user, 1).FirstOrDefault();
         if (item is null || !item.IsVisibleStandalone(user))
         {
-            return null;
+            return false;
         }
 
         var title = _rewards.BuildTitle(config, item, user);
         if (title is null)
         {
-            return null;
+            return false;
         }
 
-        return new
-        {
-            ItemId = title.ItemId.ToString("N", CultureInfo.InvariantCulture),
-            title.Name,
-            title.CoinCost,
-            title.InProgress,
-            title.ProgressPct,
-            NowPlaying = playing is not null,
-        };
+        return await _rewards.TryPlayAsync(userGuid, title.ItemId, title.ResumeTicks).ConfigureAwait(false);
     }
 
     /// <summary>Coins the kid may still redeem today: bounded by balance and the daily cap.</summary>

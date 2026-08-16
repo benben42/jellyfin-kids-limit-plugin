@@ -2,8 +2,8 @@
 
 A persistent reward system layered on top of the daily limits: the kid earns
 **coins** by doing chores, banks them indefinitely (no midnight reset), and spends
-them later as extra watch time — ideally by picking a poster of what she wants to
-watch on a TV-friendly, picture-only page.
+them later as extra watch time — asked for on a clock face, on a TV-friendly,
+picture-only page.
 
 Target user for the kid UI: a 6-year-old who cannot read, using an Android TV
 remote (D-pad). Everything is pictures, emoji, counts and sounds.
@@ -28,26 +28,30 @@ remote (D-pad). Everything is pictures, emoji, counts and sounds.
   only anti-hoarding tool.
 - **Daily redeem cap** (`MaxRedeemCoinsPerDay`, default 6 = 30 min): a big bank
   cannot be blown in one sitting. Tracked per local day in the wallet.
-- **Resume-aware pricing**: a partly-watched movie costs only its *remaining*
-  runtime ("20 minutes to finish" = 4 coins, not the full 18) and redeeming it
-  resumes playback from the saved position. The kid page shows a progress bar on
-  the poster. Series posters keep the median-episode price (episodes are cheap
-  and there is no single "resume the series" position).
-- **Partial redeem**: picking a poster that costs more than what is redeemable
-  today spends what *is* redeemable and grants that much time — so the daily cap
-  means "N coins of watching per day", not "only short titles ever". A long
-  movie is watched in daily installments; each day the poster shows the
-  remaining-time price. The midnight refund still returns unwatched coins.
+- **Default spend** (`DefaultSpendCoins`, default 3 = 15 min): where the kid
+  page's spend clock opens, so the usual amount is a single 👍 and ▲/▼ are only
+  for asking for something else.
 - **Two lock reasons** on the kid page, told apart in pictures: 🔒 on a coin =
   the jar is empty (go earn coins); 🌙 = coins are banked but today's redeem
-  allowance is spent (come back tomorrow). Posters are never permanently locked.
-- **Keep watching**: one tile, faced with the **poster** of whatever is playing
-  now (or was last watched), priced at what it costs to finish. It replaced the
-  old abstract "1 coin / 3 coins → +N minutes" tiles: minutes are a unit a
-  non-reader cannot feel, a picture of her show is one she can act on, and it
-  leaves a single rule — coins buy shows. While something is genuinely playing
-  it spends through `kid/time` (bonus time only, playback untouched); with
-  nothing playing it redeems the title so the spend also *starts* it.
+  allowance is spent (come back tomorrow). The spend tile is never permanently
+  locked.
+- **One spend, on a clock**: the page had a wall of posters, each with its own
+  coin price. It failed its actual user — every tile asked a different arithmetic
+  question ("can I afford *this* one?"), and none of them answered the one she
+  had ("more telly, now"). So all of it collapsed into **one tile** (a coin going
+  into a telly), and the amount is chosen afterwards on an **analog clock**: the
+  hands show the real time, and a gold wedge sweeps forward from the minute hand
+  by the time she is buying. Time as a *shape* is readable before arithmetic is.
+  ▲/▼ move it one coin at a time, ▲ greys out at what she can afford today, and
+  the wedge never exceeds one full turn (past that it wraps onto itself and stops
+  meaning anything). Confirming spends through `kid/time`, which also resumes the
+  last thing she watched when nothing is playing — the coins have to visibly
+  produce television.
+- **Resume-aware pricing** survives in the API (`kid/redeem`, `BuildTitle`): a
+  partly-watched movie costs only its *remaining* runtime and playback resumes at
+  the saved position, and a redeem that exceeds today's allowance is partial. No
+  kid-page surface prices titles any more — the clock buys plain minutes — but the
+  endpoint and its pricing stay for direct callers and for the resume path.
 - **Redeemed time behaves like bonus time** (§5.1): it lifts daily, session and
   the currently-active window budget — but as **one day-wide pool**. A playing
   second that exceeds any base cap drains the pool by one second (exactly once,
@@ -76,10 +80,11 @@ remote (D-pad). Everything is pictures, emoji, counts and sounds.
 1. **Kid TV page** — `GET /KidsLimit/kid?token=<KidToken>` (anonymous HTML; all
    data calls carry the token). Two rows of big tiles:
    - *Chores*: emoji tile + coin badge; states: claimable / pending (⏳) / done (✅).
-   - *Watch*: reference-title posters with coin cost; picking one debits the
-     coins, grants the bonus time and (best effort) starts playback of that item
-     on the kid's active Jellyfin session (`SendPlayCommand`). If no session is
-     active the page shows "open Jellyfin" guidance (pictogram).
+   - *Spend*: exactly one tile — a coin dropping into a telly whose screen is a
+     clock — which opens the spend clock above. Confirming debits the coins,
+     grants the time and (best effort) resumes the last thing she watched when
+     nothing is playing; when it cannot, the page shows "open Jellyfin" guidance
+     (pictogram).
    - Header: the kid's Jellyfin profile photo (👋 wave when there is none) and
      her three balances, each drawn as a different thing so they can't be
      confused. **TV-time meter** (📺 + draining battery bar + minutes): her
@@ -92,16 +97,11 @@ remote (D-pad). Everything is pictures, emoji, counts and sounds.
      a gate on the bank, not a third currency; ☀️ flips to 🌙 when spent. The
      header is sticky: a D-pad has no "jump to top", so the balances stay
      visible however deep the child scrolls into the grid.
-   - The watch grid is sorted by most-recently-watched first, movies and series
-     mixed by real recency (a series' recency comes from its episodes' play
-     dates), then alphabetically.
-   - **Prices are drawn as coins matched against her own piggy**: solid coins
-     are the ones she can pay right now, hollow ones are what is still missing.
-     Counting "two more" is something she can do; "it costs 8 and I have 5" is
-     subtraction. Above six coins the row stops being countable and becomes the
-     pile plus the number. Exactly one tile — the cheapest she can afford
-     outright — breathes, so a wall of locked posters always offers one clear
-     "this one, right now" instead of reading as a flat no.
+   - **The price is drawn as coins matched against her own piggy**, under the
+     clock: solid coins are the ones she can pay right now, hollow ones are what
+     is still missing. Counting "two more" is something she can do; "it costs 8
+     and I have 5" is subtraction. Above six coins the row becomes the pile plus
+     the number. The spend tile itself breathes whenever anything is affordable.
    - **The exchange is animated, not narrated**: on a spend the coins visibly
      leave the piggy, cross the header and land in the TV meter, which grows as
      they arrive. Standing on a spend tile first previews it — a hatched gold
@@ -109,11 +109,11 @@ remote (D-pad). Everything is pictures, emoji, counts and sounds.
      celebration card covers this: the two chips and their relationship *are*
      the lesson.
    - **Asked at the moment it matters**: when the meter hits empty and she still
-     has redeemable coins, the page offers 🐷 ➜ 📺 with one button, once per
-     flat battery. Left idle, it shows a wordless three-line explainer —
+     has redeemable coins, the page opens the spend clock itself — already set to
+     the default amount, so the whole answer is one 👍 — once per flat battery. Left idle, it shows a wordless three-line explainer —
      🧹→🪙→🐷, 🐷→🪙→📺, 📺→🍿 — once per idle stretch.
-   - The page polls a lightweight state endpoint (`kid/state?light=1`, no
-     library page) every 5 s, dropping to 1.5 s for three minutes while a claim
+   - The page polls `kid/state` — coins, chores and time only, no library query
+     behind it at all — every 5 s, dropping to 1.5 s for three minutes while a claim
      is waiting on a parent, so an approval lands while the child is still
      watching for it. All the polled endpoints are `no-store`; the loop re-arms
      itself after every response and pulls immediately on visibility/focus/
@@ -125,13 +125,17 @@ remote (D-pad). Everything is pictures, emoji, counts and sounds.
      sound feedback. No reading required.
 2. **Parent dashboard** (existing admin page) — per-kid wallet: balance, pending
    claims with ✓/✗, one-tap earn buttons per chore, custom adjust, manual redeem.
+   The standalone parent page deliberately drops the per-chore earn buttons (a
+   dozen rows per kid for something the kid claims herself, which then lands right
+   there as ⏳ to approve); "± adjust" covers manual coins in one control.
    Also available as a **standalone page**: `GET /KidsLimit/parent?token=<BonusApiToken>`
    serves the same controls from any phone browser with no Jellyfin admin login
    (config comes from `GET /KidsLimit/parent/meta`). Copy the URL from settings
    or the admin dashboard's "📱 Phone page" button and bookmark it.
 3. **Plugin settings** — "Rewards" tab: coin value, bank cap, daily redeem cap,
-   ntfy topic URL, chores editor, reference-title picker (library search), and a
-   per-kid token + ready-to-copy kid page URL.
+   the spend clock's default amount, ntfy topic URL, chores editor,
+   reference-title picker (library search), and a per-kid token + ready-to-copy
+   kid page URL.
 4. **Android TV app** — `android-tv/` contains a minimal sideloadable WebView
    wrapper (leanback launcher entry, fullscreen, keeps screen on) pointed at the
    kid page URL. All UI iteration happens server-side; the APK never needs
@@ -152,8 +156,8 @@ generator prompts and [`docs/ADDING-CHORES.md`](docs/ADDING-CHORES.md) for addin
 
 - Parent endpoints: existing `BonusApiToken` shared-secret scheme.
 - Kid endpoints: per-user `KidToken` (generated in settings). It only permits:
-  read own wallet/chores state, claim a chore, redeem for a reference title,
-  fetch poster images. It cannot grant, adjust, approve, or touch other users.
+  read own wallet/chores state, claim a chore, spend coins on time (or on a
+  title, via the API), fetch poster images. It cannot grant, adjust, approve, or touch other users.
 
 ## Notifications
 

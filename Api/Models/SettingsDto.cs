@@ -47,6 +47,9 @@ public class SettingsDto
     /// <summary>Gets or sets the max coins redeemable per local day (0 = unlimited).</summary>
     public int MaxRedeemCoinsPerDay { get; set; }
 
+    /// <summary>Gets or sets how many coins the kid page's spend clock starts on.</summary>
+    public int DefaultSpendCoins { get; set; }
+
     /// <summary>Gets or sets the reusable limit presets.</summary>
     public List<Preset> Presets { get; set; } = new();
 

@@ -32,6 +32,7 @@ public class PluginConfiguration : BasePluginConfiguration
         CoinMinutes = 5;
         BankCapCoins = 24;
         MaxRedeemCoinsPerDay = 6;
+        DefaultSpendCoins = 3;
 
         OverLimitAlertEnabled = true;
         OverLimitAlertMinutes = 3;
@@ -149,6 +150,15 @@ public class PluginConfiguration : BasePluginConfiguration
     /// bank cannot be spent in one sitting. 0 = unlimited.
     /// </summary>
     public int MaxRedeemCoinsPerDay { get; set; }
+
+    /// <summary>
+    /// Gets or sets how many coins the kid page's spend clock starts on. The child then
+    /// only presses ▲/▼ when she wants something other than the usual amount, so the
+    /// common case is a single "yes". Default 3 (= 15 minutes at the default
+    /// <see cref="CoinMinutes"/>). Clamped at spend time to what she can actually afford
+    /// today, so a value above <see cref="MaxRedeemCoinsPerDay"/> is harmless.
+    /// </summary>
+    public int DefaultSpendCoins { get; set; }
 
     /// <summary>
     /// Gets or sets the server's public base URL ("https://jellyfin.example.com" or
