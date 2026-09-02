@@ -609,6 +609,11 @@ public class RewardsController : ControllerBase
 
         var config = Config;
         var claim = _rewards.Claim(config, IdN(kid.Value.Guid), kid.Value.Name, choreId, PublicBase(config));
+        _logger.LogInformation(
+            "KidsLimit: kid {User} claimed chore {Chore}; filed={Filed}.",
+            IdN(kid.Value.Guid),
+            choreId,
+            claim is not null);
         return new { Ok = claim is not null };
     }
 
@@ -632,16 +637,35 @@ public class RewardsController : ControllerBase
         [FromQuery] bool resume = false,
         [FromQuery] string? token = null)
     {
+        // A spend used to leave no trace at all unless it threw, and the two quiet exits
+        // below — an unmatched token and a bad amount — answer 401/400, which the server
+        // does not log either. The child saw a ⚠️ and the log had nothing in it, so there
+        // was no way to tell a request that was refused from one that never arrived. Every
+        // exit says something now; this is a handful of lines a day, not a firehose.
         var kid = ResolveKid(token);
         if (kid is null)
         {
+            _logger.LogWarning(
+                "KidsLimit: spend refused — the kid token matched no enabled user (token {Length} chars). "
+                + "A kid page left open across a settings save carries the old token.",
+                token?.Length ?? 0);
             return Unauthorized();
         }
 
         if (coins <= 0)
         {
+            _logger.LogWarning(
+                "KidsLimit: spend refused for {User} — asked for {Coins} coin(s).",
+                IdN(kid.Value.Guid),
+                coins);
             return BadRequest("coins must be positive.");
         }
+
+        _logger.LogInformation(
+            "KidsLimit: kid {User} is spending {Coins} coin(s) (resume={Resume}).",
+            IdN(kid.Value.Guid),
+            coins,
+            resume);
 
         var config = Config;
         var outcome = _rewards.Redeem(config, IdN(kid.Value.Guid), coins, "Extra time");
@@ -651,6 +675,14 @@ public class RewardsController : ControllerBase
         var played = outcome.Error is null && resume
             && await PlayedOrFalseAsync(
                 TryResumeLastAsync(config, kid.Value.Guid), kid.Value.Guid).ConfigureAwait(false);
+
+        _logger.LogInformation(
+            "KidsLimit: spend for {User} answered error={Error}, spent={Spent}, granted={Granted}s, played={Played}.",
+            IdN(kid.Value.Guid),
+            outcome.Error ?? "none",
+            outcome.CoinsSpent,
+            outcome.SecondsGranted,
+            played);
 
         return new { outcome.Error, outcome.CoinBalance, outcome.SecondsGranted, outcome.CoinsSpent, Played = played };
     }
