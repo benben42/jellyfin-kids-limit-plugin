@@ -218,9 +218,15 @@ step, no framework, no dependencies. Changing UI means editing the embedded HTML
   tile and a six-year-old could not convert. Prices still render as coins matched against
   her balance (solid = affordable, `.missing` = still needed), a spend animates coins from
   the piggy chip into the TV meter, and focusing the spend tile previews the gain as a
-  ghost segment on that meter. All polled endpoints send `no-store` and the poll loop
-  re-arms itself per response (Android freezes backgrounded timers); anything that
-  changes behind the child's back — a parent approving a chore — announces itself.
+  ghost segment on that meter. All polled endpoints send `no-store` and the poll loop is
+  written to be unkillable, because the Android TV WebView lies to it: it re-arms both
+  before and after every request, every request carries an abort deadline plus a
+  stale-in-flight watchdog, and it slows down rather than stops on `document.hidden`
+  (which can stay stuck at true after returning from another app). Anything that
+  changes behind the child's back — a parent approving a chore — announces itself, and
+  a card never draws while the spend clock is up: the clock is the higher layer, so a
+  flash fired under it is a dialog she can see and cannot press. Hold it (`queueFlash`)
+  and play it when the screen frees up (`flushQueuedFlash`).
 - Known duplication to keep in sync: `SUGGESTED_CHORES` in `configPage.html` must mirror
   `PluginConfiguration.DefaultChores()`. See `docs/ADDING-CHORES.md` §4.2.
 
