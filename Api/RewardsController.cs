@@ -396,6 +396,7 @@ public class RewardsController : ControllerBase
                 "text/html");
         }
 
+        NoStore();
         using var stream = GetType().Assembly.GetManifestResourceStream("Jellyfin.Plugin.KidsLimit.Web.parent.html");
         if (stream is null)
         {
@@ -473,6 +474,7 @@ public class RewardsController : ControllerBase
                 "text/html");
         }
 
+        NoStore();
         using var stream = GetType().Assembly.GetManifestResourceStream("Jellyfin.Plugin.KidsLimit.Web.kid.html");
         if (stream is null)
         {
@@ -839,8 +841,11 @@ public class RewardsController : ControllerBase
     /// Marks a response as live data that must never be reused from a cache.
     /// The kid page and the parent page both poll the same URL over and over, so a
     /// cached body means the child keeps staring at a coin count her parent already
-    /// changed. Images and the clipart catalog deliberately do NOT get this — they are
-    /// static and should stay cached.
+    /// changed. The two HTML pages get it too: they ship inside the plugin DLL, so a
+    /// cached copy survives a plugin upgrade and the fix the parent just installed
+    /// silently does not arrive — the TV's WebView is the one client nobody can force
+    /// a reload on. Images and the clipart catalog deliberately do NOT get this — they
+    /// are static and should stay cached.
     /// </summary>
     private void NoStore() =>
         Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
