@@ -36,6 +36,14 @@ public sealed class RewardsService
     /// <summary>Ledger type: a claim the parent rejected (zero delta, kept for the record).</summary>
     public const string TypeReject = "Reject";
 
+    /// <summary>
+    /// How long the whole best-effort "put something back on" attempt may take before
+    /// the caller is answered without it. Generous for a live socket, short enough that
+    /// a dead one never keeps a child waiting in front of the television for a spend
+    /// she has already paid for.
+    /// </summary>
+    private static readonly TimeSpan PlayCommandBudget = TimeSpan.FromSeconds(5);
+
     private readonly WalletStore _wallets;
     private readonly StateStore _store;
     private readonly ISessionManager _sessionManager;
@@ -557,6 +565,15 @@ public sealed class RewardsService
     /// For a series a random episode is chosen. Clients that ignore remote-control
     /// commands (some TV apps) make this fail silently — the caller reports that back
     /// to the kid page so it can show "open Jellyfin" guidance instead.
+    /// <para>
+    /// The whole attempt is bounded by <see cref="PlayCommandBudget"/>. A session whose
+    /// socket is half-open — a TV app the child switched away from hours ago is the
+    /// normal case — can leave <c>SendPlayCommand</c> waiting on a dead connection for
+    /// as long as the OS takes to give up, and the child is standing in front of the
+    /// television waiting for a spend she has already paid for. One deadline covers the
+    /// whole loop, so a queue of stale sessions cannot add up either: past it the
+    /// remaining sends fail immediately and the caller simply reports "nothing started".
+    /// </para>
     /// </summary>
     /// <param name="userGuid">The user.</param>
     /// <param name="itemId">The item (movie/episode/series).</param>
@@ -587,6 +604,8 @@ public sealed class RewardsService
             .OrderByDescending(s => s.LastActivityDate)
             .ToList();
 
+        using var deadline = new CancellationTokenSource(PlayCommandBudget);
+
         foreach (var session in sessions)
         {
             try
@@ -601,7 +620,7 @@ public sealed class RewardsService
                         ControllingUserId = userGuid,
                         StartPositionTicks = startPositionTicks > 0 ? startPositionTicks : null,
                     },
-                    CancellationToken.None).ConfigureAwait(false);
+                    deadline.Token).ConfigureAwait(false);
                 return true;
             }
             catch (Exception ex)

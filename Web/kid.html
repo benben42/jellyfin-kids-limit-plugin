@@ -1308,10 +1308,18 @@
             spendAnimation(r.CoinsSpent || coins, function () {
                 if (!r.Played) { sndYay(); flashOverlay('🎉 📺 👆', '', 3800); }
             });
-        // Pull fresh state behind the ⚠️: a write can fail on the way BACK, after the
-        // server already did it. Re-reading means the piggy and the meter tell her the
-        // truth either way, instead of the page insisting nothing happened.
-        }).catch(function () { sndNo(); flashOverlay('⚠️', '', 1800, true); });
+        }).catch(function () {
+            sndNo();
+            // Close the clock FIRST, for the same reason the refusal above does: the
+            // card is painted under the clock overlay, so flashing it with the clock
+            // still up leaves a ⚠️ dimly in the background and her standing on a clock
+            // that nothing will ever close. This path had been missed.
+            closeClock();
+            // Reload behind the ⚠️: a write can fail on the way BACK, after the server
+            // already did it. Re-reading means the piggy and the meter tell her the
+            // truth either way, instead of the page insisting nothing happened.
+            flashOverlay('⚠️', '', 1800, true);
+        });
     }
 
     // ------------------------------------------------- teaching the exchange
