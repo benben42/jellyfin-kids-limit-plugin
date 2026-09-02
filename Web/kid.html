@@ -187,7 +187,7 @@
        position:fixed because it travels between two chips in the sticky header while
        the grid may be scrolled anywhere. */
     .flyCoin {
-        position: fixed; z-index: 20; pointer-events: none; font-size: 5vh;
+        position: fixed; z-index: 60; pointer-events: none; font-size: 5vh;
         transition: transform .75s cubic-bezier(.45, 0, .25, 1), opacity .75s ease-in;
     }
 
@@ -269,9 +269,16 @@
     .empty { opacity: .6; font-size: 3vh; padding: 4vh 0; }
 
     /* -------- overlay: confirm / celebrate -------- */
+    /* Both full-screen overlays repeat `inset: 0` as longhands. The shorthand is recent
+       (Chrome 87) and the Android TV box this page actually lives on can be carrying a
+       much older System WebView, where the whole declaration is dropped: the fixed
+       element then keeps its *static* position — down past the last section, sized to
+       its contents — so the dialog is generated somewhere behind the page instead of
+       over it, and there is nothing on screen to press. */
     #overlay {
-        position: fixed; inset: 0; background: rgba(6, 8, 22, .9); display: none;
-        align-items: center; justify-content: center; z-index: 10; backdrop-filter: blur(.6vh);
+        position: fixed; inset: 0; top: 0; right: 0; bottom: 0; left: 0;
+        background: rgba(6, 8, 22, .9); display: none;
+        align-items: center; justify-content: center; z-index: 30; backdrop-filter: blur(.6vh);
     }
     #overlay.open { display: flex; }
     #overlayCard {
@@ -311,7 +318,8 @@
        and compare. ▲/▼ sit above and below the face because that is exactly where the
        D-pad buttons that drive them are. */
     #clockOverlay {
-        position: fixed; inset: 0; z-index: 12; display: none;
+        position: fixed; inset: 0; top: 0; right: 0; bottom: 0; left: 0;
+        z-index: 40; display: none;
         align-items: center; justify-content: center; gap: 6vw;
         background: rgba(6, 8, 22, .94); backdrop-filter: blur(.6vh);
     }
@@ -321,7 +329,11 @@
     /* min(vh, vw): on the TV the face is sized off height, but the same page opens on a
        phone in portrait where height is the LONG axis and a vh-sized clock would run off
        the sides. */
-    #clockFace { width: min(60vh, 72vw); height: min(60vh, 72vw); }
+    /* The plain-vh pair first, the min() pair second: an old WebView keeps the
+       declaration it understands, a current one takes the better answer. Without a
+       fallback the SVG falls back to the replaced-element default (300x150) and the
+       face arrives squashed. */
+    #clockFace { width: 60vh; height: 60vh; width: min(60vh, 72vw); height: min(60vh, 72vw); }
     #clockFace .face { fill: #141a3d; stroke: rgba(255, 255, 255, .22); stroke-width: 3; }
     /* The wedge sweeps straight over the numerals, so they carry their own dark halo
        (paint-order puts the stroke behind the fill) — white on gold is otherwise the
@@ -558,9 +570,22 @@
     var POLL_IDLE_MS = 5000;
     var POLL_EAGER_MS = 1500;
     var EAGER_WINDOW_MS = 3 * 60 * 1000;
+    // Kept slow rather than stopped while the page believes it is hidden — see
+    // schedulePoll: on the TV that belief is the thing most likely to be wrong.
+    var POLL_HIDDEN_MS = 30000;
     var pollTimer = null;
     var eagerUntil = 0;
     var inFlight = false;
+    var inFlightSince = 0;
+    var stateSeq = 0;
+    // A poll that never settles used to park `inFlight` at true for good, and every
+    // later poll then returned at the guard without ever asking the server: the page
+    // sat on the coin count it happened to have when the app was last frozen until
+    // someone restarted it. Give up on a request this old and start a fresh one.
+    var IN_FLIGHT_STALE_MS = 25000;
+    // Every request also carries its own deadline, so an abandoned one is really gone
+    // instead of left holding a socket open behind us.
+    var REQUEST_TIMEOUT_MS = 15000;
     var lastPendingCount = 0;
 
     // ------------------------------------------------------------------ audio
@@ -589,12 +614,25 @@
     // TV for as long as the cache holds it. The server sends no-store; belt-and-braces
     // here because an Android TV WebView is the one client we cannot re-test easily —
     // 'no-store' on the request plus a unique _ keeps it from ever matching a cache entry.
+    // A request that hangs forever is worse than one that fails: a failure re-arms the
+    // poll loop, a hang leaves it waiting. An Android TV WebView frozen mid-fetch is
+    // exactly how that happens, so every call aborts itself after REQUEST_TIMEOUT_MS
+    // and comes back through the normal rejection path. (AbortController is guarded:
+    // an old WebView without it still gets the stale-request watchdog in loadState.)
     function api(path, method) {
         var sep = path.indexOf('?') >= 0 ? '&' : '?';
-        return fetch(
-            'kid/' + path + sep + 'token=' + encodeURIComponent(token) + '&_=' + Date.now(),
-            { method: method || 'GET', cache: 'no-store' })
-            .then(function (r) { if (!r.ok) { throw new Error(r.status); } return r.json(); });
+        var url = 'kid/' + path + sep + 'token=' + encodeURIComponent(token) + '&_=' + Date.now();
+        var opts = { method: method || 'GET', cache: 'no-store' };
+        var timer = null;
+        if (window.AbortController) {
+            var ctrl = new AbortController();
+            opts.signal = ctrl.signal;
+            timer = setTimeout(function () { ctrl.abort(); }, REQUEST_TIMEOUT_MS);
+        }
+        function done() { if (timer) { clearTimeout(timer); timer = null; } }
+        return fetch(url, opts).then(
+            function (r) { done(); if (!r.ok) { throw new Error(r.status); } return r.json(); },
+            function (e) { done(); throw e; });
     }
 
     // ---------------------------------------------------------------- render
@@ -787,27 +825,47 @@
 
     // One self-rescheduling timer instead of setInterval: a fixed interval can stack up
     // requests when the network is slow, and Android freezes a backgrounded app's timers
-    // (so ticks silently vanish). Re-arming after every response — and pulling
+    // (so ticks silently vanish). Re-arming around every request — and pulling
     // immediately on every "the page is in front again" signal — makes the page
     // self-heal instead of sitting on a stale number.
     function schedulePoll() {
         if (pollTimer) { clearTimeout(pollTimer); }
-        pollTimer = setTimeout(function () {
-            // Nothing to show while hidden; visibilitychange pulls the moment we're back.
-            if (document.hidden) { schedulePoll(); return; }
-            loadState(false);
-        }, Date.now() < eagerUntil ? POLL_EAGER_MS : POLL_IDLE_MS);
+        // While hidden we slow down rather than stop. Skipping the fetch entirely on
+        // document.hidden read as free, but an Android TV WebView can come back from
+        // another app with that flag still stuck at true — and then the loop woke every
+        // few seconds only to put itself back to sleep, so the TV showed one refresh
+        // (the forced one on resume) and never another until the app was restarted.
+        // A genuinely backgrounded WebView has its timers frozen anyway, so on the TV
+        // this tick only ever runs when the page is really in front and the flag is
+        // lying; the cost everywhere else is one cheap call every 30 s.
+        var wait = document.hidden
+            ? POLL_HIDDEN_MS
+            : (Date.now() < eagerUntil ? POLL_EAGER_MS : POLL_IDLE_MS);
+        pollTimer = setTimeout(function () { loadState(false); }, wait);
     }
 
     function loadState(initial) {
         // Drop the call, but never the loop: returning without re-arming the timer here
-        // would stop the page refreshing for good.
-        if (inFlight) { schedulePoll(); return; }
+        // would stop the page refreshing for good. The age check is the escape hatch —
+        // a request that has been "in flight" longer than any real one could be is one
+        // nobody is going to hear back from, so stop deferring to it.
+        if (inFlight && (Date.now() - inFlightSince) < IN_FLIGHT_STALE_MS) { schedulePoll(); return; }
         inFlight = true;
+        inFlightSince = Date.now();
+        var seq = ++stateSeq;
+        // Arm the next tick BEFORE the request rather than only in its handlers: a
+        // request that never comes back would otherwise leave no timer behind at all,
+        // and there would be nothing left running to notice it had gone stale. The
+        // response re-times this, so the normal path is unchanged.
+        schedulePoll();
         // One cheap call, every few seconds: coins, chores and time only. No library
         // query hides behind it any more, which is what lets the cadence stay this
         // quick — a parent's approve/reject shows up on the TV almost immediately.
         api('state').then(function (s) {
+            // A poll we gave up on can still land, minutes late and carrying numbers
+            // from before. It must neither paint them nor hand the loop back to itself,
+            // because a newer poll already owns both.
+            if (seq !== stateSeq) { return; }
             inFlight = false;
             var prevCoins = lastCoins;
             var prevPending = pendingMap(state);
@@ -837,6 +895,7 @@
             document.getElementById('status').textContent = new Date().toLocaleTimeString();
             schedulePoll();
         }).catch(function () {
+            if (seq !== stateSeq) { return; }
             inFlight = false;
             document.getElementById('status').textContent = '⚠';
             schedulePoll();
@@ -947,6 +1006,14 @@
     }
 
     // --------------------------------------------------------------- overlay
+    // Is the card layer up? Is *anything* up? The clock sits above the card, so "the
+    // screen is free" is not the same question as "the card is closed".
+    function cardOpen() {
+        return document.getElementById('overlay').classList.contains('open');
+    }
+
+    function busyOverlay() { return clockOpen || cardOpen(); }
+
     function openOverlay(artHtml, costHtml, buttons) {
         if (overlayTimer) { clearTimeout(overlayTimer); overlayTimer = null; }
         document.getElementById('overlayArt').innerHTML = artHtml;
@@ -970,24 +1037,36 @@
         if (overlayTimer) { clearTimeout(overlayTimer); overlayTimer = null; }
         attractOpen = false;
         focusFirst();
-        if (queuedFlash) {
-            var q = queuedFlash;
-            queuedFlash = null;
-            // Small beat so the card visibly closes and re-opens rather than swapping
-            // its contents, which would read as "nothing happened".
-            setTimeout(function () { flashOverlay(q.art, q.cost, q.ms); }, 400);
-        }
+        flushQueuedFlash();
     }
 
     // A poll can land news (coins approved) while the child is mid-confirm on something
     // else. Never yank her dialog away — hold the news until the dialog is gone.
+    // "Gone" includes the spend clock: the clock is painted ABOVE the card layer, so a
+    // flash fired while she is choosing minutes used to render *behind* it — a dialog
+    // sitting in the background that she can see the edges of, cannot press, and that
+    // dims the clock she is actually using for as long as it lasts.
     var queuedFlash = null;
     function queueFlash(artHtml, costHtml, ms) {
-        if (document.getElementById('overlay').classList.contains('open')) {
+        if (busyOverlay()) {
             queuedFlash = { art: artHtml, cost: costHtml, ms: ms };
             return;
         }
         flashOverlay(artHtml, costHtml, ms);
+    }
+
+    // Play a held card once nothing is on top of it any more. The beat lets whatever
+    // she was using visibly close first, rather than the card swapping in under her
+    // thumb — and if something else claimed the screen in the meantime the news stays
+    // queued for the next time the screen frees up, instead of flashing behind it.
+    function flushQueuedFlash() {
+        if (!queuedFlash) { return; }
+        setTimeout(function () {
+            if (!queuedFlash || busyOverlay()) { return; }
+            var q = queuedFlash;
+            queuedFlash = null;
+            flashOverlay(q.art, q.cost, q.ms);
+        }, 400);
     }
 
     function flashOverlay(artHtml, costHtml, ms, reload) {
@@ -1143,6 +1222,8 @@
         if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
         var tile = document.getElementById('spendTile');
         if (tile) { tile.focus(); }
+        // News that arrived while she was on the clock has been waiting for this.
+        flushQueuedFlash();
     }
 
     // --------------------------------------------------------------- actions
@@ -1234,7 +1315,7 @@
         if (left === null || left === undefined) { return; }
         if (left > 0) { outOfTimePrompted = false; return; }
         if (outOfTimePrompted || redeemable() <= 0) { return; }
-        if (clockOpen || document.getElementById('overlay').classList.contains('open')) { return; }
+        if (busyOverlay()) { return; }
 
         outOfTimePrompted = true;
         openClock();
@@ -1251,8 +1332,7 @@
     }
 
     function showAttract() {
-        if (attractShown || document.hidden || clockOpen) { return; }
-        if (document.getElementById('overlay').classList.contains('open')) { return; }
+        if (attractShown || document.hidden || busyOverlay()) { return; }
         attractShown = true;
         attractOpen = true;
         flashOverlay(
@@ -1354,6 +1434,13 @@
             case 'ArrowDown': move('down'); e.preventDefault(); break;
             case 'Enter':
             case ' ':
+                // A flash card has no buttons, so focus is still sitting on the tile
+                // underneath it. OK must dismiss the card she can see rather than fire
+                // the tile she cannot — pressing "spend" through a card reads as the
+                // page acting on its own.
+                if (overlayOpen && !document.querySelector('#overlayButtons .obtn')) {
+                    closeOverlay(); e.preventDefault(); break;
+                }
                 var el = document.activeElement;
                 if (el && el.classList.contains('tile')) { onActivate(el); e.preventDefault(); }
                 else if (el && el.classList.contains('obtn')) { el.click(); e.preventDefault(); }

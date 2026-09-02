@@ -78,6 +78,24 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         webView.onResume()
+        refreshPage()
+    }
+
+    /**
+     * Some launchers hand the window back without a full pause/resume pair (a system
+     * dialog dismissed over us, a leanback overlay closing). That is the same "we were
+     * away and the numbers may have moved" moment, so pull fresh state there too — the
+     * page's own guard makes a redundant pull free.
+     */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && this::webView.isInitialized) {
+            refreshPage()
+        }
+    }
+
+    /** Asks the kid page to pull fresh state right now; a no-op before it has loaded. */
+    private fun refreshPage() {
         webView.evaluateJavascript(
             "window.kidsLimitRefresh && window.kidsLimitRefresh();",
             null,
