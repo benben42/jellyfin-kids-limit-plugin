@@ -644,6 +644,27 @@
             function (e) { done(); throw e; });
     }
 
+    // ------------------------------------------------------------- status stamp
+    // The dim corner stamp normally just says when the last poll landed. It is also the
+    // only place a grown-up can find out WHY something failed: the child gets a ⚠️ and
+    // nothing else, because she cannot read and a status code would only frighten her.
+    // A held reason survives the next few polls so it is still there when someone comes
+    // to look, instead of being overwritten by a timestamp a second later.
+    var statusHoldUntil = 0;
+
+    function setStatus(text, holdMs) {
+        if (!holdMs && Date.now() < statusHoldUntil) { return; }
+        statusHoldUntil = holdMs ? Date.now() + holdMs : 0;
+        document.getElementById('status').textContent = text;
+    }
+
+    // Turns a rejected api() call into something diagnosable: api throws the HTTP status
+    // as the message, and an abort names itself.
+    function noteFailure(what, e) {
+        var why = (e && e.name === 'AbortError') ? 'timeout' : ((e && e.message) || '?');
+        setStatus('⚠ ' + what + ' ' + why, 120000);
+    }
+
     // ---------------------------------------------------------------- render
     function esc(s) { return (s || '').toString().replace(/[&<>"]/g, function (c) {
         return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
@@ -901,12 +922,12 @@
             if (pending > lastPendingCount) { goEager(); }
             lastPendingCount = pending;
 
-            document.getElementById('status').textContent = new Date().toLocaleTimeString();
+            setStatus(new Date().toLocaleTimeString());
             schedulePoll();
         }).catch(function () {
             if (seq !== stateSeq) { return; }
             inFlight = false;
-            document.getElementById('status').textContent = '⚠';
+            setStatus('⚠');
             schedulePoll();
         });
     }
@@ -1281,7 +1302,7 @@
         // Pull fresh state behind the ⚠️: a write can fail on the way BACK, after the
         // server already did it. Re-reading means the piggy and the meter tell her the
         // truth either way, instead of the page insisting nothing happened.
-        }).catch(function () { sndNo(); flashOverlay('⚠️', '', 1800, true); });
+        }).catch(function (e) { sndNo(); noteFailure('chore', e); flashOverlay('⚠️', '', 1800, true); });
     }
 
     // The one spend on the page: N coins become N × CoinMinutes of telly.
@@ -1308,8 +1329,9 @@
             spendAnimation(r.CoinsSpent || coins, function () {
                 if (!r.Played) { sndYay(); flashOverlay('🎉 📺 👆', '', 3800); }
             });
-        }).catch(function () {
+        }).catch(function (e) {
             sndNo();
+            noteFailure('spend', e);
             // Close the clock FIRST, for the same reason the refusal above does: the
             // card is painted under the clock overlay, so flashing it with the clock
             // still up leaves a ⚠️ dimly in the background and her standing on a clock
