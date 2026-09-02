@@ -584,8 +584,14 @@
     // someone restarted it. Give up on a request this old and start a fresh one.
     var IN_FLIGHT_STALE_MS = 25000;
     // Every request also carries its own deadline, so an abandoned one is really gone
-    // instead of left holding a socket open behind us.
+    // instead of left holding a socket open behind us. Reads get the short one: the
+    // state call is tiny and a slow one is worth restarting. Writes get the long one
+    // and must never be cut short on a healthy server — /kid/time debits the coins
+    // BEFORE it tries to resume playback, so a client that gives up early shows her a
+    // ⚠️ for a spend that actually happened, and she pays twice when she tries again.
+    // Waking a sleeping TV client is exactly the slow part.
     var REQUEST_TIMEOUT_MS = 15000;
+    var WRITE_TIMEOUT_MS = 60000;
     var lastPendingCount = 0;
 
     // ------------------------------------------------------------------ audio
@@ -616,18 +622,21 @@
     // 'no-store' on the request plus a unique _ keeps it from ever matching a cache entry.
     // A request that hangs forever is worse than one that fails: a failure re-arms the
     // poll loop, a hang leaves it waiting. An Android TV WebView frozen mid-fetch is
-    // exactly how that happens, so every call aborts itself after REQUEST_TIMEOUT_MS
-    // and comes back through the normal rejection path. (AbortController is guarded:
-    // an old WebView without it still gets the stale-request watchdog in loadState.)
+    // exactly how that happens, so every call aborts itself at its deadline and comes
+    // back through the normal rejection path. (AbortController is guarded: an old
+    // WebView without it still gets the stale-request watchdog in loadState.)
     function api(path, method) {
         var sep = path.indexOf('?') >= 0 ? '&' : '?';
         var url = 'kid/' + path + sep + 'token=' + encodeURIComponent(token) + '&_=' + Date.now();
-        var opts = { method: method || 'GET', cache: 'no-store' };
+        var verb = method || 'GET';
+        var opts = { method: verb, cache: 'no-store' };
         var timer = null;
         if (window.AbortController) {
             var ctrl = new AbortController();
             opts.signal = ctrl.signal;
-            timer = setTimeout(function () { ctrl.abort(); }, REQUEST_TIMEOUT_MS);
+            timer = setTimeout(
+                function () { ctrl.abort(); },
+                verb === 'GET' ? REQUEST_TIMEOUT_MS : WRITE_TIMEOUT_MS);
         }
         function done() { if (timer) { clearTimeout(timer); timer = null; } }
         return fetch(url, opts).then(
@@ -1269,7 +1278,10 @@
                 sndNo();
                 flashOverlay('🚫', '', 1800, true);
             }
-        }).catch(function () { sndNo(); flashOverlay('⚠️', '', 1800); });
+        // Pull fresh state behind the ⚠️: a write can fail on the way BACK, after the
+        // server already did it. Re-reading means the piggy and the meter tell her the
+        // truth either way, instead of the page insisting nothing happened.
+        }).catch(function () { sndNo(); flashOverlay('⚠️', '', 1800, true); });
     }
 
     // The one spend on the page: N coins become N × CoinMinutes of telly.
@@ -1296,7 +1308,18 @@
             spendAnimation(r.CoinsSpent || coins, function () {
                 if (!r.Played) { sndYay(); flashOverlay('🎉 📺 👆', '', 3800); }
             });
-        }).catch(function () { sndNo(); flashOverlay('⚠️', '', 1800); });
+        }).catch(function () {
+            sndNo();
+            // Close the clock FIRST, for the same reason the refusal above does: the
+            // card is painted under the clock overlay, so flashing it with the clock
+            // still up leaves a ⚠️ dimly in the background and her standing on a clock
+            // that nothing will ever close. This path had been missed.
+            closeClock();
+            // Reload behind the ⚠️: a write can fail on the way BACK, after the server
+            // already did it. Re-reading means the piggy and the meter tell her the
+            // truth either way, instead of the page insisting nothing happened.
+            flashOverlay('⚠️', '', 1800, true);
+        });
     }
 
     // ------------------------------------------------- teaching the exchange
