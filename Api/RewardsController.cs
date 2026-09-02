@@ -13,6 +13,7 @@ using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.KidsLimit.Api;
 
@@ -37,6 +38,7 @@ public class RewardsController : ControllerBase
     private readonly ILibraryManager _libraryManager;
     private readonly IUserDataManager _userDataManager;
     private readonly NotificationService _notifications;
+    private readonly ILogger<RewardsController> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RewardsController"/> class.
@@ -48,6 +50,7 @@ public class RewardsController : ControllerBase
     /// <param name="libraryManager">Library manager.</param>
     /// <param name="userDataManager">User data manager (play dates for the watch-grid ordering).</param>
     /// <param name="notifications">Push-notification fan-out.</param>
+    /// <param name="logger">Logger.</param>
     public RewardsController(
         RewardsService rewards,
         WalletStore wallets,
@@ -55,7 +58,8 @@ public class RewardsController : ControllerBase
         IUserManager userManager,
         ILibraryManager libraryManager,
         IUserDataManager userDataManager,
-        NotificationService notifications)
+        NotificationService notifications,
+        ILogger<RewardsController> logger)
     {
         _rewards = rewards;
         _wallets = wallets;
@@ -64,6 +68,7 @@ public class RewardsController : ControllerBase
         _libraryManager = libraryManager;
         _userDataManager = userDataManager;
         _notifications = notifications;
+        _logger = logger;
     }
 
     private PluginConfiguration Config =>
@@ -644,7 +649,8 @@ public class RewardsController : ControllerBase
         // Only after the coins actually left the wallet: never start playback she has not
         // paid for (and the time she just bought is what keeps it running).
         var played = outcome.Error is null && resume
-            && await TryResumeLastAsync(config, kid.Value.Guid).ConfigureAwait(false);
+            && await PlayedOrFalseAsync(
+                TryResumeLastAsync(config, kid.Value.Guid), kid.Value.Guid).ConfigureAwait(false);
 
         return new { outcome.Error, outcome.CoinBalance, outcome.SecondsGranted, outcome.CoinsSpent, Played = played };
     }
@@ -707,7 +713,9 @@ public class RewardsController : ControllerBase
             return new { outcome.Error, outcome.CoinBalance, Played = false };
         }
 
-        var played = await _rewards.TryPlayAsync(kid.Value.Guid, title.ItemId, title.ResumeTicks).ConfigureAwait(false);
+        var played = await PlayedOrFalseAsync(
+            _rewards.TryPlayAsync(kid.Value.Guid, title.ItemId, title.ResumeTicks),
+            kid.Value.Guid).ConfigureAwait(false);
         return new
         {
             Error = (string?)null,
@@ -919,6 +927,37 @@ public class RewardsController : ControllerBase
         }
 
         return front;
+    }
+
+    /// <summary>
+    /// Awaits a best-effort auto-play and never lets it fail the request.
+    /// <para>
+    /// Both callers reach it AFTER the coins have left the wallet, and everything it
+    /// touches — a library query, user data, posters, a session's socket — can throw for
+    /// reasons that have nothing to do with the spend. An exception escaping here would
+    /// answer 500 for a purchase that actually happened: the child is shown a ⚠️ for
+    /// time she has already paid for, and pays a second time when she tries again. Any
+    /// fault is simply "nothing started" — the time is hers either way and she presses
+    /// play herself.
+    /// </para>
+    /// </summary>
+    /// <param name="attempt">The auto-play already under way.</param>
+    /// <param name="userGuid">The kid, for the log line.</param>
+    /// <returns>True when a session accepted the Play command; false on any failure.</returns>
+    private async Task<bool> PlayedOrFalseAsync(Task<bool> attempt, Guid userGuid)
+    {
+        try
+        {
+            return await attempt.ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "KidsLimit: auto-play after a spend failed for {User}; the coins were still spent.",
+                IdN(userGuid));
+            return false;
+        }
     }
 
     /// <summary>
