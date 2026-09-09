@@ -107,6 +107,20 @@ migrating to 12, and for a **full library scan afterwards**. For this plugin spe
 2. Uninstall the plugin, upgrade the server, then install `3.0.0.0`+ from the repository.
 3. State and wallets are plain JSON under the plugin data directory and are untouched by
    the server's database migrations — watch time, coins and history carry over.
+4. **Check that only one plugin folder survives the upgrade.** Jellyfin loads every folder
+   under `plugins/`, and only de-duplicates versions of the same plugin when it has a
+   `meta.json` for each — a sideloaded or half-removed `Kids Watch-Time Limit_2.3.0.2`
+   left beside `Kids Watch-Time Limit_3.0.0` is loaded *as well*, in its own load context.
+   Two copies of the assembly means two `WatchTimeTracker`s crediting the same state files,
+   duplicate controller routes (`AmbiguousMatchException` on every `/KidsLimit/*` request,
+   which the parent page reports as "Failed to load status. Check the API token in
+   settings"), and a configuration that cannot be saved at all: the XML serializer
+   generated for one copy's `PluginConfiguration` is handed the other's identically named
+   type and throws `InvalidCastException`. Because `MyXmlSerializer.SerializeToFile`
+   truncates before it writes, those failed saves also leave
+   `plugins/configurations/Jellyfin.Plugin.KidsLimit.xml` half-written, so settings can be
+   lost — worth a look after cleaning up. `WatchTimeTracker.StartAsync` logs an error
+   naming every loaded copy when it detects this.
 
 ## 4. What 12 offers this plugin
 

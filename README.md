@@ -118,6 +118,33 @@ just show up as updates in the catalog.
 3. Restart Jellyfin.
 4. Open **Dashboard → Plugins → Kids Watch-Time Limit** to configure.
 
+### Upgrading a 2.x install to 3.x (Jellyfin 12)
+
+**Exactly one copy of the plugin may be on disk.** Jellyfin loads every folder it
+finds under `plugins/`, and a folder it has no `meta.json` for is never
+recognised as an older version of one that has it. So a leftover
+`Kids Watch-Time Limit_2.3.0.2` sitting next to a freshly installed
+`Kids Watch-Time Limit_3.0.0` gets loaded **as well**, and everything breaks in a
+way that points nowhere near the real cause:
+
+- the parent page and dashboard show *"Failed to load status. Check the API token
+  in settings"* — the token is fine; every `/KidsLimit/*` request is failing with
+  `AmbiguousMatchException: The request matched multiple endpoints`, because both
+  copies registered the same controllers;
+- the log repeats `KidsLimit maintenance tick failed` with
+  `InvalidCastException: PluginConfiguration cannot be cast to PluginConfiguration`
+  (the same type name from two assemblies), so the configuration can no longer be
+  saved at all;
+- `KidsLimit tracker started.` appears **twice**, and both trackers credit watch
+  time into the same files.
+
+To fix it, stop Jellyfin, delete the older folder(s) under
+`<config>/plugins/`, and start it again. Since the failed saves truncate
+`<config>/plugins/configurations/Jellyfin.Plugin.KidsLimit.xml` in place, check
+that file afterwards: if it is empty or cut off mid-element, the settings
+(including `BonusApiToken`) have been lost and need entering again. Version
+`3.0.0.0`+ logs a plain-English error naming every loaded copy when it sees this.
+
 ### Cutting a release (maintainer)
 
 Releases are cut **automatically from `main`**: bump `version:` in `build.yaml`

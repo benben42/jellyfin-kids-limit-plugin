@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.KidsLimit.Configuration;
@@ -69,6 +70,8 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
     /// <inheritdoc />
     public Task StartAsync(CancellationToken cancellationToken)
     {
+        WarnIfDuplicateInstall();
+
         var dataDir = Plugin.Instance?.DataFolderPath
             ?? throw new InvalidOperationException("Plugin instance not initialized.");
         _store.Initialize(dataDir);
@@ -108,6 +111,47 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
 
     /// <inheritdoc />
     public void Dispose() => _maintenanceTimer?.Dispose();
+
+    // Jellyfin loads *every* plugin folder it finds, and a folder without a meta.json is
+    // never de-duplicated against one that has it — so a leftover 10.11 install sitting next
+    // to a fresh Jellyfin 12 one loads twice, as two assemblies in two load contexts. That
+    // breaks the plugin in three ways at once: two hosted services credit the same state
+    // files twice, every /KidsLimit/* route resolves to two controllers and 500s with
+    // AmbiguousMatchException, and the config cannot be saved at all because the XML
+    // serializer generated for one copy's PluginConfiguration is handed the other copy's
+    // identically named type. All the parent page shows for that is "Failed to load status.
+    // Check the API token in settings", which sends people hunting for the wrong bug — so
+    // say plainly what is wrong and which folders to look at.
+    private void WarnIfDuplicateInstall()
+    {
+        try
+        {
+            var assemblyName = typeof(Plugin).Assembly.GetName().Name;
+            var copies = AppDomain.CurrentDomain.GetAssemblies()
+                .Where(a => string.Equals(a.GetName().Name, assemblyName, StringComparison.Ordinal))
+                .Select(a => FormattableString.Invariant(
+                    $"{a.GetName().Version} at {(string.IsNullOrEmpty(a.Location) ? "an unknown location" : a.Location)}"))
+                .ToList();
+
+            if (copies.Count < 2)
+            {
+                return;
+            }
+
+            _logger.LogError(
+                "KidsLimit: {Count} copies of the plugin are loaded at the same time ({Copies}). "
+                + "This breaks the API (every route matches twice) and stops the configuration "
+                + "from being saved. Stop Jellyfin, delete all but the newest of those folders "
+                + "from the server's plugins directory, and start it again.",
+                copies.Count,
+                string.Join(", ", copies));
+        }
+        catch (Exception ex)
+        {
+            // A diagnostic must never be the thing that stops the tracker from starting.
+            _logger.LogWarning(ex, "KidsLimit: could not check for duplicate plugin installs.");
+        }
+    }
 
     private void OnMaintenance(object? state)
     {
