@@ -59,7 +59,7 @@ jobs:
         if: steps.ver.outputs.should == 'true'
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '9.0.x'
+          dotnet-version: '10.0.x'
 
       - name: Restore
         if: steps.ver.outputs.should == 'true'
@@ -79,7 +79,7 @@ jobs:
         run: |
           ZIP_NAME="jellyfin-kids-limit-plugin_${{ steps.ver.outputs.version }}.zip"
           mkdir -p dist
-          cp bin/Release/net9.0/Jellyfin.Plugin.KidsLimit.dll dist/
+          cp bin/Release/net10.0/Jellyfin.Plugin.KidsLimit.dll dist/
           (cd dist && zip -j "$ZIP_NAME" Jellyfin.Plugin.KidsLimit.dll)
           CHECKSUM=$(md5sum "dist/$ZIP_NAME" | cut -d' ' -f1)
           echo "zip_name=$ZIP_NAME" >> "$GITHUB_OUTPUT"

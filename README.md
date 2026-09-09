@@ -9,8 +9,14 @@ limit is reached, **stops the offending session** (best-effort on-screen warning
 too). It never mutates the user's account or library permissions. See
 [`REQUIREMENTS.md`](REQUIREMENTS.md) for the full specification.
 
-Target: **Jellyfin 10.11.x** (net9.0). Built with the modern
+Target: **Jellyfin 12.0.x** (net10.0). Built with the modern
 `IHostedService` + `IPluginServiceRegistrator` model.
+
+Jellyfin 12 retargeted the server to .NET 10, so a plugin built for 10.11 will
+not load on it (and vice versa). Versions **3.0.0.0 and newer** of this plugin
+are for **Jellyfin 12.0+**; the last build for **Jellyfin 10.11.x** is
+**2.3.0.2**, which stays in the plugin repository manifest and is what a 10.11
+server keeps being offered.
 
 ---
 
@@ -77,12 +83,12 @@ hard block using the selected mode, regardless of the on/off setting.
 ## Building
 
 The CI workflow (`.github/workflows/build.yml`) builds the DLL on every push and
-uploads it as an artifact. To build locally you need the **.NET 9 SDK**
-(Jellyfin 10.11 targets net9.0):
+uploads it as an artifact. To build locally you need the **.NET 10 SDK**
+(Jellyfin 12 targets net10.0):
 
 ```bash
 dotnet build Jellyfin.Plugin.KidsLimit.csproj -c Release
-# → bin/Release/net9.0/Jellyfin.Plugin.KidsLimit.dll
+# → bin/Release/net10.0/Jellyfin.Plugin.KidsLimit.dll
 ```
 
 ## Installing

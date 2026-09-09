@@ -8,7 +8,10 @@ A **Jellyfin server plugin** (`Jellyfin.Plugin.KidsLimit`) that enforces cumulat
 watch-time limits for kids — per user, per weekday, per time-of-day window — plus a chore
 "coins" rewards system kids can spend as extra watch time.
 
-- Target: **Jellyfin 10.11.x**, **net9.0**, `Jellyfin.Controller` / `Jellyfin.Model` 10.11.11.
+- Target: **Jellyfin 12.0.x**, **net10.0**, `Jellyfin.Controller` / `Jellyfin.Model` 12.0.0.
+  Jellyfin 12 moved the server to .NET 10, so one build cannot serve both server lines:
+  plugin `3.0.0.0`+ is Jellyfin 12 only, and `2.3.0.2` stays in `manifest.json` as the
+  last 10.11 build. See `docs/JELLYFIN-12.md` for the audit behind the move.
 - Plugin GUID: `a1e5c7f2-3b4d-4e6a-9c8b-2d1f0e3a5b7c` (also hard-coded in `build.yaml`,
   `Configuration/configPage.html`, `Web/dashboard.html`, `manifest.json` — keep in sync).
 - Uses the modern `IPluginServiceRegistrator` + `IHostedService` model, not the deprecated
@@ -26,6 +29,7 @@ Source-of-truth design docs, all still current and worth reading before non-triv
 | `README.md` | User-facing install/config/API reference |
 | `docs/ADDING-CHORES.md` | Exact steps to add a chore + its art (which files, which are optional) |
 | `docs/CHORE-IMAGE-PROMPTS.md` | Image-generator prompts and the clay art style rules |
+| `docs/JELLYFIN-12.md` | The Jellyfin 12 port: what was audited, what changed, what 12 APIs are still on the table |
 | `android-tv/README.md` | The sideloadable WebView wrapper APK |
 
 ## Layout
@@ -73,7 +77,7 @@ correspondingly careful about compile errors.
 ## Build & release
 
 ```bash
-dotnet build Jellyfin.Plugin.KidsLimit.csproj -c Release   # -> bin/Release/net9.0/*.dll
+dotnet build Jellyfin.Plugin.KidsLimit.csproj -c Release   # -> bin/Release/net10.0/*.dll
 ```
 
 - `.github/workflows/build.yml` builds on every push to `main` and `claude/**`, and on PRs.
@@ -88,6 +92,9 @@ dotnet build Jellyfin.Plugin.KidsLimit.csproj -c Release   # -> bin/Release/net9
 `v*` tags by hand, and the tag (not the file) determined the built version. So the in-repo
 version numbers are stale by design of how releases have actually been made. Don't "fix"
 them as a drive-by; if you bump `build.yaml` on `main`, that alone triggers a release.
+The one thing the next release must get right is the **major** bump: `targetAbi` is now
+`12.0.0.0`, so the first Jellyfin 12 release should be tagged `v3.0.0.0` and not a `2.3.x`
+successor — a 10.11 server filters by `targetAbi` and will simply keep offering `2.3.0.2`.
 
 ## How enforcement works
 
@@ -173,11 +180,22 @@ namespace-dotted (`Jellyfin.Plugin.KidsLimit.Web.kid.html`); MSBuild can mangle 
 in file names, which `ChoreClipart.BuildResolved` tolerates. Raster formats win over `.svg`
 for the same key, so new art supersedes legacy line art with no code change.
 
-**Jellyfin 10.11 API specifics** already worked out — don't regress them:
-`Jellyfin.Database.Implementations.Entities.User` (the entity namespace moved in 10.11),
-`IUserManager.GetUsers()` for enumeration, `IUserManager.GetUserDto(user).Policy` +
-`UpdatePolicyAsync`, `ITranscodeManager.KillTranscodingJobs`,
-`ISessionManager.CloseLiveStreamIfNeededAsync`.
+**Jellyfin server API specifics** already worked out — don't regress them:
+`Jellyfin.Database.Implementations.Entities.User` (the entity namespace moved in 10.11 and
+is still there in 12; it reaches the plugin transitively via `Jellyfin.Model` ->
+`Jellyfin.Data`), `IUserManager.GetUsers()` for enumeration (12 turned the old `Users`
+property into this method — the plugin was already on the method), `IUserManager
+.GetUserDto(user).Policy` + `UpdatePolicyAsync`, `ITranscodeManager.KillTranscodingJobs`,
+`ISessionManager.CloseLiveStreamIfNeededAsync`. Every one of these is byte-identical
+between 10.11.11 and 12.0.0, which is why the 12 port was a retarget and no code change.
+
+**The plugin's own auth survived 12's authorization purge.** Jellyfin 12 disables legacy
+authorization by default, but that only covers the server's own `api_key=`/`X-Emby-
+Authorization` schemes. Both plugin schemes ride on `[AllowAnonymous]` controllers with
+their own tokens, and the HTML pages never send a Jellyfin credential — `kid.html` and
+`parent.html` fetch item art and profile images through the plugin's own endpoints, not
+`/Items/{id}/Images`. Keep it that way: routing a page through a Jellyfin-authed endpoint
+would re-couple it to a scheme the server is in the middle of removing.
 
 ## Conventions
 
