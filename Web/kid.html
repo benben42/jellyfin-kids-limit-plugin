@@ -1306,11 +1306,14 @@
     }
 
     // The one spend on the page: N coins become N × CoinMinutes of telly.
-    // `resume=1` asks the server to put the last thing she watched back on, but only if
+    // `resume=true` asks the server to put the last thing she watched back on, but only if
     // nothing is playing — the coins have to visibly produce television, and re-issuing
     // Play over something already running would yank her back to its resume point.
+    // It must be the word, not `1`: ASP.NET binds `bool` with bool.Parse, so `resume=1`
+    // fails model binding and the whole spend comes back 400 before the handler ever runs
+    // — which the child sees as a ⚠️ and a clock that took her coins nowhere.
     function spendCoins(coins) {
-        api('time?coins=' + coins + '&resume=1', 'POST').then(function (r) {
+        api('time?coins=' + coins + '&resume=true', 'POST').then(function (r) {
             if (r.Error) {
                 sndNo();
                 // Close first: the flash card sits *under* the clock overlay, so leaving
