@@ -21,6 +21,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<PlaybackTerminator>();
         serviceCollection.AddSingleton<NotificationService>();
         serviceCollection.AddSingleton<RewardsService>();
+        serviceCollection.AddSingleton<StopMethodTester>();
         serviceCollection.AddHostedService<WatchTimeTracker>();
     }
 }

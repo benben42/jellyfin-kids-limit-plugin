@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -47,6 +48,13 @@ public sealed class HardBlockEnforcer
     private readonly StateStore _store;
     private readonly ILogger<HardBlockEnforcer> _logger;
     private readonly SemaphoreSlim _gate = new(1, 1);
+
+    // Users a parent is deliberately holding blocked from the stop-method test bench
+    // (StopMethodTester). Reconcile must treat these as "should be blocked", or the 15 s
+    // maintenance tick would quietly undo the very thing being tested. Deliberately
+    // in-memory only: a server restart forgets the hold and the next reconcile restores
+    // the account, so a forgotten test can never lock a kid out permanently.
+    private readonly ConcurrentDictionary<Guid, byte> _testHolds = new();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="HardBlockEnforcer"/> class.
@@ -106,6 +114,13 @@ public sealed class HardBlockEnforcer
                 }
             }
 
+            // A test-bench hold outranks everything: it is a parent standing in front of
+            // the TV asking for this exact block to stay on until they press Release.
+            foreach (var held in _testHolds.Keys)
+            {
+                desired[held] = true;
+            }
+
             foreach (var user in _userManager.GetUsers())
             {
                 if (user is null)
@@ -143,6 +158,10 @@ public sealed class HardBlockEnforcer
     /// <returns>A task.</returns>
     public async Task ReleaseAllAsync()
     {
+        // Drop test holds too, or the next reconcile would immediately re-block the user
+        // we are shutting down / disabling for.
+        _testHolds.Clear();
+
         await _gate.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -163,6 +182,85 @@ public sealed class HardBlockEnforcer
             _gate.Release();
         }
     }
+
+    /// <summary>
+    /// Applies a block in an explicitly chosen mode and holds it until
+    /// <see cref="TestReleaseAsync"/>, ignoring the configured
+    /// <see cref="PluginConfiguration.ResolvedHardEnforcementMode"/>. Used only by the
+    /// stop-method test bench so a parent can compare the two modes without editing config.
+    /// <para>
+    /// Any block we already own is released first, so the originals file always describes
+    /// the policy as it was before *this* block — never a policy we had already mutated.
+    /// </para>
+    /// </summary>
+    /// <param name="userId">The user to block.</param>
+    /// <param name="mode">
+    /// <see cref="PluginConfiguration.ModeDisablePlayback"/> or
+    /// <see cref="PluginConfiguration.ModeAccessSchedule"/>.
+    /// </param>
+    /// <returns>A task.</returns>
+    public async Task TestBlockAsync(Guid userId, string mode)
+    {
+        _testHolds[userId] = 1;
+
+        await _gate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            var user = _userManager.GetUserById(userId);
+            if (user is null)
+            {
+                return;
+            }
+
+            if (IsBlockedByUs(user))
+            {
+                await UnblockAsync(user).ConfigureAwait(false);
+
+                // Re-read: BlockAsync is about to snapshot this entity's policy as "the
+                // originals", and the copy we hold predates the restore we just did.
+                user = _userManager.GetUserById(userId) ?? user;
+            }
+
+            await BlockAsync(user, mode).ConfigureAwait(false);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Drops a test-bench hold and restores the user's original policy. The caller should
+    /// reconcile afterwards so any block the kid's real limits still require comes back.
+    /// </summary>
+    /// <param name="userId">The user to release.</param>
+    /// <returns>A task.</returns>
+    public async Task TestReleaseAsync(Guid userId)
+    {
+        _testHolds.TryRemove(userId, out _);
+
+        await _gate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            var user = _userManager.GetUserById(userId);
+            if (user is not null && IsBlockedByUs(user))
+            {
+                await UnblockAsync(user).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Gets a value indicating whether a test-bench hold is currently pinning this user
+    /// blocked (so the test page can show a "release me" banner).
+    /// </summary>
+    /// <param name="userId">The user to check.</param>
+    /// <returns><c>true</c> when a hold is active.</returns>
+    public bool HasTestHold(Guid userId) => _testHolds.ContainsKey(userId);
 
     private static bool IsMarker(AccessSchedule s) =>
         s.DayOfWeek == DynamicDayOfWeek.Everyday && s.StartHour == MarkerHour && s.EndHour == MarkerHour;

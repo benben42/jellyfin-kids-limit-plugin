@@ -222,6 +222,10 @@ Auth is the shared token via `?token=` or the `X-KidsLimit-Token` header.
 | `POST` | `/KidsLimit/notify/test?token=` | Send a test push to all notification targets |
 | `GET`  | `/KidsLimit/settings?token=` | Full plugin configuration + all Jellyfin users |
 | `POST` | `/KidsLimit/settings?token=` | Replace the plugin configuration (parent settings page) |
+| `GET`  | `/KidsLimit/test?token=` | Stop-method test bench page (see below) |
+| `GET`  | `/KidsLimit/test/methods?token=` | Catalog of testable stop methods + targetable users |
+| `GET`  | `/KidsLimit/test/sessions?user=&token=` | Live session diagnostics (play method, remote-control support) |
+| `POST` | `/KidsLimit/test/run?user=&method=&token=` | Fire one stop method and report each step's outcome |
 
 Kid self-service endpoints (`/KidsLimit/kid…`) use the per-user kid token
 instead and only allow viewing the own wallet, claiming a chore and redeeming
@@ -232,6 +236,34 @@ One-tap phone shortcut / NFC / Home Assistant example:
 ```
 POST http://server:8096/KidsLimit/bonus?user=Ada&minutes=30&token=YOURSECRET
 ```
+
+### Stop-method test bench
+
+Whether a TV client honors the server's "stop playing" command is a property of that
+client's version, not of this plugin — and it changes under you when the client updates.
+Open `/KidsLimit/test?token=…` on a phone (there is also a button on the parent page,
+under **Addresses & access**) while standing in front of the TV, start something playing,
+and fire the methods one at a time:
+
+- **Is the client listening?** — pops a message on the TV. If the message appears but Stop
+  does nothing, the command channel is fine and the client is ignoring Stop specifically.
+- **Playstate commands** — Stop, Stop × 5, Pause, Seek-to-end.
+- **Navigation commands** — Go home, Back, Stop-then-Go-home.
+- **Pull the stream out from under it** — kill the transcode job, close the live stream,
+  or run exactly what enforcement sends today.
+- **Kill the session** — end the session, close it, or log the device out entirely.
+- **Policy blocks** — disable media playback, or drive the access schedule to
+  "never allowed" (with or without an accompanying stream kill).
+
+The panel at the top is as important as the buttons: if **Play method** reads `DirectPlay`,
+no amount of server-side stream teardown can interrupt what is already playing, and if
+**Accepts remote control** reads `NO` the client never agreed to be remote-controlled at all.
+
+Every lasting effect is undone by **Release everything** at the bottom of the page (which
+then re-applies whatever the kid's real limits still call for). The one exception is
+*Log this device out*, which requires signing the TV back in by hand. Record what happened
+after each method with the stopped / partly / nothing buttons and use **Copy report** to
+get a pasteable summary.
 
 ## How it works (brief)
 
