@@ -132,6 +132,14 @@ public class SessionState
     public DateTime? LastBlockMessageUtc { get; set; }
 
     /// <summary>
+    /// Gets or sets the moment the currently-announced stop is due to land. While this is
+    /// in the future a message is still on screen being read, and the sweep must not stop
+    /// playback out from under it — the sweep interval is shorter than the reading grace,
+    /// so without this the next tick would cut the message off mid-sentence.
+    /// </summary>
+    public DateTime? StopAfterUtc { get; set; }
+
+    /// <summary>
     /// Gets or sets the UTC timestamp of the last progress tick used to compute deltas.
     /// Not persisted meaningfully across restarts (treated as "now" on first tick).
     /// </summary>

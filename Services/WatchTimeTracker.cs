@@ -178,6 +178,17 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
             .Replace("{name}", kidName, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// How long to leave a message up before actually stopping. Only the first stop of a
+    /// sitting earns the full reading pause: a child who presses play again has already
+    /// been told, and a full grace on every attempt would hand out watch time for doing it.
+    /// </summary>
+    private static int GraceFor(PluginConfiguration config, StopReason reason)
+    {
+        var grace = Math.Clamp(config.StopGraceSeconds, 0, 60);
+        return reason == StopReason.AlreadyOver ? Math.Min(2, grace) : grace;
+    }
+
     private void OnSweep(object? state)
     {
         try
@@ -327,9 +338,8 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
                 {
                     decision.NewlyBlocked = !ss.Blocked;
                     ss.Blocked = true;
-                    decision.Stop = true;
                     decision.Reason = StopReason.ParentStop;
-                    MarkMessage(ss, nowUtc, ref decision);
+                    MarkMessage(ss, nowUtc, GraceFor(config, StopReason.ParentStop), ref decision);
                     return;
                 }
 
@@ -348,14 +358,13 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
                 {
                     decision.NewlyBlocked = !ss.Blocked;
                     ss.Blocked = true;
-                    decision.Stop = true; // Re-send every tick for robustness against clients that ignore it.
 
                     // "Time's up" the first time we stop this sitting; "TV is sleeping"
                     // every time afterwards, because by then the child is pressing play on
                     // a limit they have already been told about and needs a different
                     // sentence — not the same one again.
                     decision.Reason = decision.NewlyBlocked ? StopReason.LimitReached : StopReason.AlreadyOver;
-                    MarkMessage(ss, nowUtc, ref decision);
+                    MarkMessage(ss, nowUtc, GraceFor(config, decision.Reason), ref decision);
 
                     // Watchdog: time still accruing (delta > 0) means the client is playing
                     // on despite the Stop. After the configured grace, alert the parent that
@@ -383,9 +392,17 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
                     ss.OverLimitSinceUtc = null;
                     ss.OverLimitAlerted = false;
                     ss.Blocked = false;
+                    ss.StopAfterUtc = null;
 
-                    if (!ss.Warned &&
-                        remaining.RemainingSeconds <= (long)userCfg.WarnMinutesBeforeLimit * 60)
+                    var warnAt = (long)userCfg.WarnMinutesBeforeLimit * 60;
+                    if (remaining.RemainingSeconds > warnAt)
+                    {
+                        // Comfortably clear of the threshold again — usually because a
+                        // parent granted bonus. Re-arm, so the extra time gets its own
+                        // countdown instead of running out with no warning at all.
+                        ss.Warned = false;
+                    }
+                    else if (!ss.Warned)
                     {
                         ss.Warned = true;
                         decision.Warn = true;
@@ -454,20 +471,43 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
     }
 
     /// <summary>
-    /// Decides whether this tick should also put a message on screen. Every tick sends the
-    /// Stop again (cheap, and the point of the design), but the message is rate-limited:
-    /// the first stop of a sitting always speaks, and repeats are throttled so a child
-    /// leaning on the play button doesn't produce a flashing wall of banners.
+    /// Decides whether this tick should put a message on screen, and whether it may stop.
+    ///
+    /// <para>
+    /// Two rate limits, for two different reasons. The <b>message</b> is throttled so a
+    /// child leaning on the play button doesn't produce a flashing wall of banners — the
+    /// first stop of a sitting always speaks, repeats wait out
+    /// <see cref="BlockedMessageCooldownSeconds"/>.
+    /// </para>
+    ///
+    /// <para>
+    /// The <b>stop</b> is held off until the announced grace has elapsed. Without this the
+    /// sweep would race its own message: an announcing tick starts a 6 s reading pause, the
+    /// next sweep fires 5 s later, sees "blocked, not announcing" and stops instantly —
+    /// cutting the message off before it can be read, which is the exact failure this whole
+    /// sequence exists to fix. The grace is short and bounded, so the watch time it costs
+    /// is negligible; a repeat attempt gets a much shorter one anyway.
+    /// </para>
     /// </summary>
-    private static void MarkMessage(SessionState ss, DateTime nowUtc, ref Decision decision)
+    private static void MarkMessage(SessionState ss, DateTime nowUtc, int graceSeconds, ref Decision decision)
     {
-        if (decision.NewlyBlocked ||
+        var mayAnnounce = decision.NewlyBlocked ||
             ss.LastBlockMessageUtc is null ||
-            (nowUtc - ss.LastBlockMessageUtc.Value).TotalSeconds >= BlockedMessageCooldownSeconds)
+            (nowUtc - ss.LastBlockMessageUtc.Value).TotalSeconds >= BlockedMessageCooldownSeconds;
+
+        if (mayAnnounce)
         {
             ss.LastBlockMessageUtc = nowUtc;
+            ss.StopAfterUtc = graceSeconds > 0 ? nowUtc.AddSeconds(graceSeconds) : null;
             decision.Announce = true;
+            decision.GraceSeconds = graceSeconds;
+            decision.Stop = true;
+            return;
         }
+
+        // A stop is already scheduled behind a message that is still on screen — leave it
+        // to the task that owns it.
+        decision.Stop = ss.StopAfterUtc is null || nowUtc >= ss.StopAfterUtc.Value;
     }
 
     /// <summary>
@@ -505,15 +545,9 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
 
                 await SendMessageAsync(session.Id, config, header, text).ConfigureAwait(false);
 
-                // Only the first stop of a sitting earns the full reading pause. A repeat
-                // stop (the child pressed play again) ends promptly: they have already been
-                // told, and a long grace would hand out free watch time every attempt.
-                var grace = decision.Reason == StopReason.AlreadyOver
-                    ? Math.Min(2, Math.Clamp(config.StopGraceSeconds, 0, 60))
-                    : Math.Clamp(config.StopGraceSeconds, 0, 60);
-                if (grace > 0)
+                if (decision.GraceSeconds > 0)
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(grace)).ConfigureAwait(false);
+                    await Task.Delay(TimeSpan.FromSeconds(decision.GraceSeconds)).ConfigureAwait(false);
                 }
             }
         }
@@ -566,6 +600,7 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
         public bool Stop;
         public bool NewlyBlocked;
         public bool Announce;
+        public int GraceSeconds;
         public StopReason Reason;
         public bool Warn;
         public long RemainingSeconds;
