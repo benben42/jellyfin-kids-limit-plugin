@@ -32,7 +32,6 @@ public class StopTestController : ControllerBase
     private readonly ISessionManager _sessionManager;
     private readonly IUserManager _userManager;
     private readonly StopMethodTester _tester;
-    private readonly HardBlockEnforcer _enforcer;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="StopTestController"/> class.
@@ -40,17 +39,14 @@ public class StopTestController : ControllerBase
     /// <param name="sessionManager">Session manager (live diagnostics).</param>
     /// <param name="userManager">User manager.</param>
     /// <param name="tester">The stop-method bench.</param>
-    /// <param name="enforcer">Hard-block enforcer (test-hold state for the banner).</param>
     public StopTestController(
         ISessionManager sessionManager,
         IUserManager userManager,
-        StopMethodTester tester,
-        HardBlockEnforcer enforcer)
+        StopMethodTester tester)
     {
         _sessionManager = sessionManager;
         _userManager = userManager;
         _tester = tester;
-        _enforcer = enforcer;
     }
 
     private PluginConfiguration Config =>
@@ -166,7 +162,6 @@ public class StopTestController : ControllerBase
         return new
         {
             ServerLocalTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
-            TestHoldActive = filter is not null && _enforcer.HasTestHold(filter.Value),
             Sessions = sessions,
         };
     }
@@ -203,7 +198,7 @@ public class StopTestController : ControllerBase
         }
 
         NoStore();
-        return await _tester.RunAsync(method, guid.Value, Config).ConfigureAwait(false);
+        return await _tester.RunAsync(method, guid.Value).ConfigureAwait(false);
     }
 
     private static object Describe(SessionInfo s) => new

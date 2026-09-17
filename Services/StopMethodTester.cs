@@ -5,7 +5,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Data.Queries;
-using Jellyfin.Plugin.KidsLimit.Configuration;
 using Jellyfin.Plugin.KidsLimit.State;
 using MediaBrowser.Controller.Devices;
 using MediaBrowser.Controller.MediaEncoding;
@@ -32,7 +31,7 @@ namespace Jellyfin.Plugin.KidsLimit.Services;
 ///
 /// <para>
 /// Nothing here is wired into enforcement. It is reachable only through the parent-token
-/// test API, and every state-changing method is undone by <see cref="ReleaseId"/>.
+/// test API, and the one state-changing method left is undone by <see cref="ReleaseId"/>.
 /// </para>
 /// </summary>
 public sealed class StopMethodTester
@@ -47,7 +46,6 @@ public sealed class StopMethodTester
     private readonly ISessionManager _sessionManager;
     private readonly ITranscodeManager _transcodeManager;
     private readonly IDeviceManager _deviceManager;
-    private readonly HardBlockEnforcer _enforcer;
     private readonly PlaybackTerminator _terminator;
     private readonly StateStore _store;
     private readonly ILogger<StopMethodTester> _logger;
@@ -58,7 +56,6 @@ public sealed class StopMethodTester
     /// <param name="sessionManager">Session manager.</param>
     /// <param name="transcodeManager">Transcode manager.</param>
     /// <param name="deviceManager">Device manager (per-device logout).</param>
-    /// <param name="enforcer">Hard-block enforcer (policy-level methods).</param>
     /// <param name="terminator">The production terminator, offered as one of the methods.</param>
     /// <param name="store">Daily state store (manual-stop flag).</param>
     /// <param name="logger">Logger.</param>
@@ -66,7 +63,6 @@ public sealed class StopMethodTester
         ISessionManager sessionManager,
         ITranscodeManager transcodeManager,
         IDeviceManager deviceManager,
-        HardBlockEnforcer enforcer,
         PlaybackTerminator terminator,
         StateStore store,
         ILogger<StopMethodTester> logger)
@@ -74,7 +70,6 @@ public sealed class StopMethodTester
         _sessionManager = sessionManager;
         _transcodeManager = transcodeManager;
         _deviceManager = deviceManager;
-        _enforcer = enforcer;
         _terminator = terminator;
         _store = store;
         _logger = logger;
@@ -100,9 +95,8 @@ public sealed class StopMethodTester
     /// </summary>
     /// <param name="methodId">The method id (see <see cref="Methods"/>).</param>
     /// <param name="userId">The target user's Guid.</param>
-    /// <param name="config">Plugin configuration (needed to reconcile policy blocks).</param>
     /// <returns>A per-step report of what the server attempted and how it went.</returns>
-    public async Task<StopAttemptResult> RunAsync(string methodId, Guid userId, PluginConfiguration config)
+    public async Task<StopAttemptResult> RunAsync(string methodId, Guid userId)
     {
         var method = Find(methodId);
         var result = new StopAttemptResult
@@ -139,7 +133,7 @@ public sealed class StopMethodTester
 
         try
         {
-            await DispatchAsync(method, userId, playing, config, result).ConfigureAwait(false);
+            await DispatchAsync(method, userId, playing, result).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -345,48 +339,6 @@ public sealed class StopMethodTester
             NeedsSession = true,
         },
 
-        // ---- Group F: policy blocks ----------------------------------------------
-        new()
-        {
-            Id = "block-playback",
-            Group = "6. Policy blocks (undo with Release)",
-            Title = "Disable media playback",
-            Description =
-                "Flips the user's EnableMediaPlayback policy off, so PlaybackInfo refuses to hand " +
-                "out media sources. Stops anything *new* (including auto-play of the next episode); " +
-                "an in-flight direct play may run to the end of the current item.",
-            WatchFor = "Press play on something else — it should refuse. Does the current item die too?",
-            Severity = "policy",
-            NeedsSession = false,
-        },
-        new()
-        {
-            Id = "block-schedule",
-            Group = "6. Policy blocks (undo with Release)",
-            Title = "Access schedule → never allowed",
-            Description =
-                "Drives the user's access schedule to Everyday 00:00–00:00. Jellyfin re-validates " +
-                "the schedule on every single request, so even an in-flight direct play dies at its " +
-                "next range request. The most forceful reversible lever — it also locks the kid out " +
-                "of Jellyfin entirely while it is on.",
-            WatchFor = "Playback should die within seconds, even for a direct-played file.",
-            Severity = "policy",
-            NeedsSession = false,
-        },
-        new()
-        {
-            Id = "block-schedule-kill",
-            Group = "6. Policy blocks (undo with Release)",
-            Title = "Access schedule + kill stream",
-            Description =
-                "The schedule block plus an immediate transcode kill and Stop command. If any " +
-                "combination stops a Jellyfin 12 Android TV client, this is the one — it is the " +
-                "candidate for the new production path.",
-            WatchFor = "Playback should die within seconds in every play mode.",
-            Severity = "policy",
-            NeedsSession = false,
-        },
-
         // ---- Undo ------------------------------------------------------------------
         new()
         {
@@ -409,7 +361,6 @@ public sealed class StopMethodTester
         StopMethodInfo method,
         Guid userId,
         IReadOnlyList<SessionInfo> playing,
-        PluginConfiguration config,
         StopAttemptResult result)
     {
         switch (method.Id)
@@ -575,29 +526,8 @@ public sealed class StopMethodTester
                 await LogoutDevicesAsync(result, userId, playing).ConfigureAwait(false);
                 break;
 
-            case "block-playback":
-                await StepAsync(result, "Policy: EnableMediaPlayback = false", () =>
-                    _enforcer.TestBlockAsync(userId, PluginConfiguration.ModeDisablePlayback)).ConfigureAwait(false);
-                break;
-
-            case "block-schedule":
-                await StepAsync(result, "Policy: access schedule → never", () =>
-                    _enforcer.TestBlockAsync(userId, PluginConfiguration.ModeAccessSchedule)).ConfigureAwait(false);
-                break;
-
-            case "block-schedule-kill":
-                await StepAsync(result, "Policy: access schedule → never", () =>
-                    _enforcer.TestBlockAsync(userId, PluginConfiguration.ModeAccessSchedule)).ConfigureAwait(false);
-                foreach (var s in playing)
-                {
-                    await PlaystateAsync(result, s, PlaystateCommand.Stop).ConfigureAwait(false);
-                    await KillTranscodeAsync(result, s).ConfigureAwait(false);
-                }
-
-                break;
-
             case ReleaseId:
-                await ReleaseAsync(result, userId, config).ConfigureAwait(false);
+                await ReleaseAsync(result, userId).ConfigureAwait(false);
                 break;
 
             default:
@@ -606,27 +536,22 @@ public sealed class StopMethodTester
         }
     }
 
-    private async Task ReleaseAsync(StopAttemptResult result, Guid userId, PluginConfiguration config)
+    private async Task ReleaseAsync(StopAttemptResult result, Guid userId)
     {
-        var local = DateTime.Now;
-        var today = LimitCalculator.DateKey(local);
+        var today = LimitCalculator.DateKey(DateTime.Now);
         var userIdN = userId.ToString("N", CultureInfo.InvariantCulture);
 
+        // The only lasting thing the bench can leave behind now is the manual-stop flag —
+        // the policy-block levers are gone along with the enforcer itself. Clearing it does
+        // not hand out watch time: a kid who is genuinely out of budget gets stopped again
+        // by the limit on the tracker's next pass.
         await StepAsync(result, "Clear parent \"Stop now\" flag", () =>
         {
             _store.SetManualStop(userIdN, today, false);
             return Task.CompletedTask;
         }).ConfigureAwait(false);
 
-        await StepAsync(result, "Release policy block + test hold", () =>
-            _enforcer.TestReleaseAsync(userId)).ConfigureAwait(false);
-
-        // Reconcile last so anything the *real* limits still require is re-applied rather
-        // than left off — Release must not become a backdoor that grants free watch time.
-        await StepAsync(result, "Reconcile against real limits", () =>
-            _enforcer.ReconcileAsync(config, today, local)).ConfigureAwait(false);
-
-        result.Summary = "Released. Any block that the kid's real limits still call for has been re-applied.";
+        result.Summary = "Released. Normal limits apply again.";
     }
 
     private async Task LogoutDevicesAsync(

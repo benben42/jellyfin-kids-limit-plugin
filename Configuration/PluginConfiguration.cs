@@ -11,11 +11,29 @@ namespace Jellyfin.Plugin.KidsLimit.Configuration;
 /// </summary>
 public class PluginConfiguration : BasePluginConfiguration
 {
-    /// <summary>Hard-block mode: drive the user's native access schedule (blocks all access).</summary>
-    public const string ModeAccessSchedule = "AccessSchedule";
+    /// <summary>Default header for the "you are nearly out of time" warning.</summary>
+    public const string DefaultWarnHeader = "⏰ Almost done";
 
-    /// <summary>Hard-block mode: disable the user's media-playback permission (browsing still works).</summary>
-    public const string ModeDisablePlayback = "DisablePlayback";
+    /// <summary>Default body for the warning. <c>{minutes}</c> is substituted.</summary>
+    public const string DefaultWarnText = "⏰ {minutes} more minutes of TV, then it's time to stop. 📺";
+
+    /// <summary>Default header shown as the daily limit is reached.</summary>
+    public const string DefaultLimitHeader = "🛑 Time's up!";
+
+    /// <summary>Default body shown as the daily limit is reached.</summary>
+    public const string DefaultLimitText = "📺💤 No more TV right now. 🪙 Do a chore to earn more time!";
+
+    /// <summary>Default header shown when an out-of-time kid presses play again.</summary>
+    public const string DefaultBlockedHeader = "🛑 TV is sleeping";
+
+    /// <summary>Default body shown when an out-of-time kid presses play again.</summary>
+    public const string DefaultBlockedText = "📺💤 Not now. 🪙 Earn coins with a chore, then you can watch!";
+
+    /// <summary>Default header for a parent's "Stop now".</summary>
+    public const string DefaultParentStopHeader = "🛑 Stopped";
+
+    /// <summary>Default body for a parent's "Stop now".</summary>
+    public const string DefaultParentStopText = "📺💤 A grown-up turned the TV off. 🤗";
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PluginConfiguration"/> class
@@ -26,8 +44,17 @@ public class PluginConfiguration : BasePluginConfiguration
         MiddayStartMinutes = 12 * 60; // 12:00
         EveningStartMinutes = 18 * 60; // 18:00
         BonusApiToken = string.Empty;
-        EnforceViaAccessSchedule = false;
-        HardEnforcementMode = ModeAccessSchedule;
+
+        WarnMessageHeader = DefaultWarnHeader;
+        WarnMessageText = DefaultWarnText;
+        LimitMessageHeader = DefaultLimitHeader;
+        LimitMessageText = DefaultLimitText;
+        BlockedMessageHeader = DefaultBlockedHeader;
+        BlockedMessageText = DefaultBlockedText;
+        ParentStopMessageHeader = DefaultParentStopHeader;
+        ParentStopMessageText = DefaultParentStopText;
+        MessageSeconds = 8;
+        StopGraceSeconds = 6;
 
         CoinMinutes = 5;
         BankCapCoins = 24;
@@ -67,44 +94,72 @@ public class PluginConfiguration : BasePluginConfiguration
     public string BonusApiToken { get; set; }
 
     /// <summary>
-    /// Gets or sets a value indicating whether the plugin should hard-enforce limits by
-    /// driving each kid's native Jellyfin access schedule. When on, a user who is over
-    /// their daily/window limit is blocked at the server (all access), which stops
-    /// playback even on clients that ignore the Stop command (e.g. Android TV). The
-    /// schedule is restored automatically when they are back under limit, granted bonus,
-    /// or at local midnight. Off by default. Note: this blocks all Jellyfin access for
-    /// that user while over limit, not just playback.
+    /// Gets or sets the header of the on-screen warning sent shortly before the limit.
     /// </summary>
-    public bool EnforceViaAccessSchedule { get; set; }
+    public string WarnMessageHeader { get; set; }
 
     /// <summary>
-    /// Gets or sets how hard blocks are applied (both for automatic over-limit blocking
-    /// and the parent "Stop now" hold). <see cref="ModeAccessSchedule"/> (default) blocks
-    /// all Jellyfin access for the user via their native access schedule — the most
-    /// forceful option, and the only one that also interrupts an in-flight direct-play
-    /// stream on clients that ignore the Stop command. <see cref="ModeDisablePlayback"/>
-    /// only turns off the user's media-playback permission: nothing new can start
-    /// (including auto-play of the next episode) but the kid can still browse, which is
-    /// gentler; a stubborn client may finish the item it is currently direct-playing.
+    /// Gets or sets the body of the on-screen warning. <c>{minutes}</c> is replaced with
+    /// the kid's configured warning lead time and <c>{name}</c> with their user name.
     /// </summary>
-    public string HardEnforcementMode { get; set; }
+    public string WarnMessageText { get; set; }
 
     /// <summary>
-    /// Gets the effective hard-enforcement mode, mapping unknown/legacy values (configs
-    /// saved before this setting existed deserialize it as null) to the default.
+    /// Gets or sets the header shown on the TV at the moment the limit is reached.
     /// </summary>
-    [System.Xml.Serialization.XmlIgnore]
-    public string ResolvedHardEnforcementMode =>
-        string.Equals(HardEnforcementMode, ModeDisablePlayback, StringComparison.OrdinalIgnoreCase)
-            ? ModeDisablePlayback
-            : ModeAccessSchedule;
+    public string LimitMessageHeader { get; set; }
+
+    /// <summary>
+    /// Gets or sets the body shown on the TV at the moment the limit is reached.
+    /// Supports <c>{name}</c>.
+    /// </summary>
+    public string LimitMessageText { get; set; }
+
+    /// <summary>
+    /// Gets or sets the header shown when a kid who is already out of time presses play.
+    /// </summary>
+    public string BlockedMessageHeader { get; set; }
+
+    /// <summary>
+    /// Gets or sets the body shown when a kid who is already out of time presses play.
+    /// Supports <c>{name}</c>.
+    /// </summary>
+    public string BlockedMessageText { get; set; }
+
+    /// <summary>
+    /// Gets or sets the header shown when a parent presses "Stop now".
+    /// </summary>
+    public string ParentStopMessageHeader { get; set; }
+
+    /// <summary>
+    /// Gets or sets the body shown when a parent presses "Stop now". Supports <c>{name}</c>.
+    /// </summary>
+    public string ParentStopMessageText { get; set; }
+
+    /// <summary>
+    /// Gets or sets how many seconds an on-screen message stays up. Default 8.
+    /// </summary>
+    public int MessageSeconds { get; set; }
+
+    /// <summary>
+    /// Gets or sets how many seconds to leave between showing the "time's up" message and
+    /// actually stopping playback, so the message is read before the screen goes away.
+    /// <para>
+    /// This matters because the client only renders a DisplayMessage <b>while something is
+    /// playing</b> — a message sent after the Stop lands on a dead player and is never
+    /// seen. The grace is the whole reason the kid gets told why the TV stopped instead of
+    /// it just vanishing. 0 disables it and stops immediately. Default 6.
+    /// </para>
+    /// </summary>
+    public int StopGraceSeconds { get; set; }
 
     /// <summary>
     /// Gets or sets a value indicating whether the parent should be notified (via the
     /// configured notification targets) when a kid keeps actively playing for more than
-    /// <see cref="OverLimitAlertMinutes"/> after going over limit — i.e. the automatic
-    /// stop appears to have failed (e.g. a client that ignores the Stop command with hard
-    /// enforcement off). One alert per sitting. Default on.
+    /// <see cref="OverLimitAlertMinutes"/> after going over limit — i.e. the Stop command
+    /// is being ignored. Since the plugin has no server-side fallback, this alert is the
+    /// only thing that tells a parent enforcement has stopped working. One alert per
+    /// sitting. Default on.
     /// </summary>
     public bool OverLimitAlertEnabled { get; set; }
 

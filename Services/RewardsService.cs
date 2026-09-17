@@ -49,7 +49,6 @@ public sealed class RewardsService
     private readonly ISessionManager _sessionManager;
     private readonly ILibraryManager _libraryManager;
     private readonly IUserDataManager _userDataManager;
-    private readonly HardBlockEnforcer _enforcer;
     private readonly NotificationService _notifications;
     private readonly ILogger<RewardsService> _logger;
 
@@ -61,7 +60,6 @@ public sealed class RewardsService
     /// <param name="sessionManager">Session manager.</param>
     /// <param name="libraryManager">Library manager.</param>
     /// <param name="userDataManager">User data manager (playback positions for resume pricing).</param>
-    /// <param name="enforcer">Hard-block enforcer.</param>
     /// <param name="notifications">Push-notification fan-out.</param>
     /// <param name="logger">Logger.</param>
     public RewardsService(
@@ -70,7 +68,6 @@ public sealed class RewardsService
         ISessionManager sessionManager,
         ILibraryManager libraryManager,
         IUserDataManager userDataManager,
-        HardBlockEnforcer enforcer,
         NotificationService notifications,
         ILogger<RewardsService> logger)
     {
@@ -79,7 +76,6 @@ public sealed class RewardsService
         _sessionManager = sessionManager;
         _libraryManager = libraryManager;
         _userDataManager = userDataManager;
-        _enforcer = enforcer;
         _notifications = notifications;
         _logger = logger;
     }
@@ -377,7 +373,6 @@ public sealed class RewardsService
 
         var seconds = coins * CoinSeconds(config);
         _store.GrantBonus(userId, today, seconds, fromWallet: true);
-        _ = _enforcer.ReconcileAsync(config, today, localNow);
 
         return new RedeemOutcome
         {

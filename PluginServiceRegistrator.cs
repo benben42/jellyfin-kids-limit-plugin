@@ -17,11 +17,15 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
     {
         serviceCollection.AddSingleton<StateStore>();
         serviceCollection.AddSingleton<WalletStore>();
-        serviceCollection.AddSingleton<HardBlockEnforcer>();
+        serviceCollection.AddSingleton<LegacyBlockRestorer>();
         serviceCollection.AddSingleton<PlaybackTerminator>();
         serviceCollection.AddSingleton<NotificationService>();
         serviceCollection.AddSingleton<RewardsService>();
         serviceCollection.AddSingleton<StopMethodTester>();
-        serviceCollection.AddHostedService<WatchTimeTracker>();
+        // Registered as a singleton *and* as the hosted service resolving to that same
+        // instance: the parent "Stop now" endpoint calls into the tracker directly, and
+        // AddHostedService<T> alone would only register it as IHostedService.
+        serviceCollection.AddSingleton<WatchTimeTracker>();
+        serviceCollection.AddHostedService(sp => sp.GetRequiredService<WatchTimeTracker>());
     }
 }

@@ -124,6 +124,14 @@ public class SessionState
     public bool OverLimitAlerted { get; set; }
 
     /// <summary>
+    /// Gets or sets when the "you're out of time" message was last put on this session's
+    /// screen. The tracker re-sends Stop on every sweep, but a child who keeps pressing
+    /// play would then get a banner every few seconds; this throttles the talking without
+    /// throttling the stopping.
+    /// </summary>
+    public DateTime? LastBlockMessageUtc { get; set; }
+
+    /// <summary>
     /// Gets or sets the UTC timestamp of the last progress tick used to compute deltas.
     /// Not persisted meaningfully across restarts (treated as "now" on first tick).
     /// </summary>

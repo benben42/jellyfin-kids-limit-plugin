@@ -57,8 +57,16 @@ public class SettingsController : ControllerBase
             EveningStartMinutes = config.EveningStartMinutes,
             BonusApiToken = config.BonusApiToken,
             PublicBaseUrl = config.PublicBaseUrl,
-            EnforceViaAccessSchedule = config.EnforceViaAccessSchedule,
-            HardEnforcementMode = config.ResolvedHardEnforcementMode,
+            WarnMessageHeader = config.WarnMessageHeader,
+            WarnMessageText = config.WarnMessageText,
+            LimitMessageHeader = config.LimitMessageHeader,
+            LimitMessageText = config.LimitMessageText,
+            BlockedMessageHeader = config.BlockedMessageHeader,
+            BlockedMessageText = config.BlockedMessageText,
+            ParentStopMessageHeader = config.ParentStopMessageHeader,
+            ParentStopMessageText = config.ParentStopMessageText,
+            MessageSeconds = config.MessageSeconds,
+            StopGraceSeconds = config.StopGraceSeconds,
             OverLimitAlertEnabled = config.OverLimitAlertEnabled,
             OverLimitAlertMinutes = config.OverLimitAlertMinutes,
             CoinMinutes = config.CoinMinutes,
@@ -109,11 +117,19 @@ public class SettingsController : ControllerBase
         config.MiddayStartMinutes = Math.Clamp(dto.MiddayStartMinutes, 0, 1439);
         config.EveningStartMinutes = Math.Clamp(dto.EveningStartMinutes, config.MiddayStartMinutes, 1440);
         config.PublicBaseUrl = (dto.PublicBaseUrl ?? string.Empty).Trim();
-        config.EnforceViaAccessSchedule = dto.EnforceViaAccessSchedule;
-        config.HardEnforcementMode =
-            string.Equals(dto.HardEnforcementMode, PluginConfiguration.ModeDisablePlayback, StringComparison.OrdinalIgnoreCase)
-                ? PluginConfiguration.ModeDisablePlayback
-                : PluginConfiguration.ModeAccessSchedule;
+        // Messages: a blanked field falls back to the shipped default rather than being
+        // saved empty, because an empty message means the TV stops with no explanation at
+        // all — the one outcome the whole announce-then-stop sequence exists to prevent.
+        config.WarnMessageHeader = OrDefault(dto.WarnMessageHeader, PluginConfiguration.DefaultWarnHeader);
+        config.WarnMessageText = OrDefault(dto.WarnMessageText, PluginConfiguration.DefaultWarnText);
+        config.LimitMessageHeader = OrDefault(dto.LimitMessageHeader, PluginConfiguration.DefaultLimitHeader);
+        config.LimitMessageText = OrDefault(dto.LimitMessageText, PluginConfiguration.DefaultLimitText);
+        config.BlockedMessageHeader = OrDefault(dto.BlockedMessageHeader, PluginConfiguration.DefaultBlockedHeader);
+        config.BlockedMessageText = OrDefault(dto.BlockedMessageText, PluginConfiguration.DefaultBlockedText);
+        config.ParentStopMessageHeader = OrDefault(dto.ParentStopMessageHeader, PluginConfiguration.DefaultParentStopHeader);
+        config.ParentStopMessageText = OrDefault(dto.ParentStopMessageText, PluginConfiguration.DefaultParentStopText);
+        config.MessageSeconds = Math.Clamp(dto.MessageSeconds <= 0 ? 8 : dto.MessageSeconds, 1, 60);
+        config.StopGraceSeconds = Math.Clamp(dto.StopGraceSeconds, 0, 60);
         config.OverLimitAlertEnabled = dto.OverLimitAlertEnabled;
         config.OverLimitAlertMinutes = Math.Clamp(dto.OverLimitAlertMinutes, 1, 24 * 60);
         config.CoinMinutes = Math.Max(1, dto.CoinMinutes);
@@ -266,6 +282,13 @@ public class SettingsController : ControllerBase
 
     private static int? NonNegativeOrNull(int? value) =>
         value is null ? null : Math.Max(0, value.Value);
+
+    /// <summary>
+    /// Trims a posted message field, substituting the shipped default when it is blank —
+    /// a cleared box means "put it back how it was", not "say nothing".
+    /// </summary>
+    private static string OrDefault(string? value, string fallback) =>
+        string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
 
     private static string Normalize(string id) =>
         (id ?? string.Empty).Replace("-", string.Empty, StringComparison.Ordinal)
