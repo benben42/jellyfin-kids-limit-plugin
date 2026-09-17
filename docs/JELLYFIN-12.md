@@ -9,6 +9,13 @@ This document records what was audited (so nobody re-derives it), why the 10.11 
 to be dropped rather than kept alongside, and which of 12's new plugin APIs are actually
 worth something here.
 
+> **Partly superseded, 2026-09-17.** The audit below is a snapshot of the 3.0.0.0 port and
+> is left intact as a record. Since then, bench-testing the 12-beta2 Android TV client
+> showed it honors the Stop command, and `HardBlockEnforcer` — every row below that mentions
+> it — was **deleted** in 3.1. The user-policy APIs it used (`UpdatePolicyAsync`,
+> `AccessSchedule`, `EnableMediaPlayback`) are no longer called by anything. See
+> `REQUIREMENTS.md` §2.1 for the measurements and the upgrade note in §3 below.
+
 ## 1. What changed in this repo
 
 | File | Change |
@@ -100,10 +107,11 @@ Every API the plugin uses, and its status in 12.0.0:
 Jellyfin's own release notes ask for third-party plugins to be **removed before**
 migrating to 12, and for a **full library scan afterwards**. For this plugin specifically:
 
-1. Turn the hard-block option **off and Save**, and clear any parent "Stop now" hold with
-   **Allow** in the dashboard, before uninstalling — `HardBlockEnforcer` restores the saved
-   policy when it releases a block, and an uninstalled plugin cannot un-block anyone.
-   (`README.md` already says this; 12's remove-then-reinstall advice makes it matter more.)
+1. Clear any parent "Stop now" hold with **Allow** in the dashboard before uninstalling.
+   *(Up to 3.0 you also had to turn hard enforcement off and Save first, because an
+   uninstalled plugin could not un-block anyone. 3.1 removed the hard block entirely and
+   ships `LegacyBlockRestorer`, which restores any policy a 3.0-or-earlier block left
+   behind on first start — so an install that was upgraded mid-block repairs itself.)*
 2. Uninstall the plugin, upgrade the server, then install `3.0.0.0`+ from the repository.
 3. State and wallets are plain JSON under the plugin data directory and are untouched by
    the server's database migrations — watch time, coins and history carry over.
@@ -157,9 +165,10 @@ inserts, `IHasEmbeddedImage` (compiled-in plugins only).
 
 - The web client's new **"still watching" prompt** pauses idle playback. The tracker only
   credits time when a session is not paused, so a kid who falls asleep in front of the TV
-  now burns less of her allowance to the web client — the same problem the 15 s maintenance
-  sweep and `MaxDeltaSeconds` clamp already defend against from the server side.
+  now burns less of her allowance to the web client — the same problem the enforcement
+  sweep (15 s then, 5 s since 3.1) and `MaxDeltaSeconds` clamp already defend against from
+  the server side.
 - **Nothing in 12 changed the hard-block surface.** `AccessSchedule`,
-  `UserPolicy.EnableMediaPlayback` and `UpdatePolicyAsync` are untouched, so
-  `HardBlockEnforcer` — including its save-originals-then-restore contract — carries over
-  exactly.
+  `UserPolicy.EnableMediaPlayback` and `UpdatePolicyAsync` were untouched, so
+  `HardBlockEnforcer` carried over exactly. *(Moot as of 3.1: the enforcer was removed once
+  the client was shown to honor Stop, and the plugin no longer writes user policies at all.)*

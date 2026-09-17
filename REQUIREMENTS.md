@@ -43,28 +43,44 @@ version at build time.
 - **Config page** lives by default under Dashboard → Plugins → (this plugin).
   See §11 for making it directly accessible.
 
-### 2.1 THE LOAD-BEARING RISK — validate first (Phase 0 spike)
+### 2.1 THE LOAD-BEARING RISK — resolved: the TV honors Stop
 
-The household's primary client is **Jellyfin Android TV**. That client has a
-known capability-reporting bug: it advertises `SupportsRemoteControl=False` and
-`SupportsMediaControl=False`, and **server-sent `DisplayMessage` toasts do not
-appear** on it. Recent Android TV releases (0.19+, 2026) *added* remote-control
-support (seek/ff/rewind), which strongly suggests server→TV **Stop/Pause now
-works** — but this is unconfirmed for the specific device/version.
+The household's primary client is **Jellyfin Android TV**. Historically that
+client advertised `SupportsRemoteControl=False` / `SupportsMediaControl=False`
+and swallowed server-sent commands, and **everything in this plugin depends on
+the server being able to stop playback on the actual TV** — so this was the
+first thing to validate and the reason the hard-block fallback ever existed.
 
-**Everything in this plugin depends on the server being able to stop playback on
-the actual Android TV.** So the very first task is a ~1-hour spike:
+**Answered, 2026-09-17, against the Jellyfin 12 server and the 12-beta2 Android
+TV client**, by firing each mechanism separately from the stop-method test bench
+(`/KidsLimit/test`) with the TV in front of the tester:
 
-> **Spike:** From the server (or a REST call using `ISessionManager` /
-> `/Sessions/{id}/Playing/Stop`), confirm that an in-progress video on the
-> household's Android TV can be **stopped** on demand. Also confirm whether
-> **Pause** and **DisplayMessage** work.
+| Mechanism | Result |
+|---|---|
+| `DisplayMessage` | **Renders** — including emoji. Only while something is playing. |
+| Playstate `Stop` | **Stops playback.** |
+| Playstate `Stop` ×5 | Stops. |
+| Playstate `Pause` | Stops (freezes). |
+| Playstate `Seek` to end | Ends the item. |
+| `GoHome` / `Back` general commands | Ignored — the client does not implement them. |
+| Kill transcode job | Nothing (the session was DirectPlay — no job to kill). |
+| Close live stream | Nothing (not Live TV). |
+| `ReportSessionEnded` / `CloseIfNeeded` | Nothing; the client re-registers. |
+| Log the device out | Nothing — the app stayed logged in and kept playing. |
+| Disable media playback (policy) | Nothing to the in-flight stream, as expected. |
 
-- If **Stop works** → proceed with the full design below.
-- If **Stop does NOT work** → the whole "monitor → kill" model fails on the
-  primary client, and the only fallback is the heavy-handed
-  account/session-disable hammer (explicitly rejected — see §12). **Do not build
-  the rest until this is resolved.**
+So the "monitor → stop" model works on the primary client, and the
+account-disabling hammer §12 rejects on principle is not needed in practice.
+**The hard block has been removed** (see §5) and the plugin no longer modifies
+any Jellyfin account setting.
+
+**The standing risk this leaves.** A direct-played file is the one stream the
+server cannot interrupt without the client's cooperation, and there is now no
+fallback if a client update regresses. The over-limit watchdog (§8) is the
+entire safety net: if a kid keeps accruing time past the limit, the parent is
+notified that auto-stop appears to have failed. **Re-run the test bench after
+every Android TV client update** — the answer above is specific to a client
+version, not permanent.
 
 ---
 
@@ -257,17 +273,29 @@ session and need no separate token.
 
 ---
 
-## 8. Warnings & the Android TV reality
+## 8. Warnings & what the TV actually shows
 
-- The 10-min **on-TV text warning is unreliable on Android TV** (DisplayMessage
-  is a known no-op there), and pre-readers can't read it anyway.
-- Therefore: treat the warning primarily as a **parent-facing signal**
-  (dashboard highlight + optional push/notification hook), and send the on-TV
-  `DisplayMessage` only as best-effort for clients that do render it (web,
-  mobile).
-- The kid's real, reliable signal is simply that **the show stops and won't
-  restart**, reinforced by routine. The **hard stop is the enforcement**; the
-  warning is a courtesy.
+The 12-beta2 Android TV client **does** render `DisplayMessage`, emoji included
+(§2.1) — the old assumption that it was a no-op there is dead. Two constraints
+shape how it is used:
+
+- **A message only draws while something is playing.** A message sent *after* a
+  Stop lands on a dead player and is never seen. So the plugin announces first,
+  waits `StopGraceSeconds` (default 6) so it can be read, and only then stops.
+  This was the actual bug behind "the TV just switches itself off".
+- **The child cannot read.** The messages lead with emoji (⏰ 🛑 📺💤 🪙) and
+  keep words to a minimum. All eight strings are editable from either settings
+  page, so they can be reworded or translated without a rebuild.
+
+Three distinct moments get three distinct messages: the near-limit warning, the
+limit being reached, and a child who is already out of time pressing play again
+("TV is sleeping", not "time's up" repeated). A parent's **Stop now** gets a
+fourth. Repeats are throttled to one per 30 s per session — the *stopping*
+repeats every sweep, the *talking* does not — and a repeat attempt gets a much
+shorter reading pause, so pressing play over and over cannot buy extra minutes.
+
+The warning remains a courtesy and a parent-facing signal; **the stop is the
+enforcement**, reinforced by routine.
 
 ---
 

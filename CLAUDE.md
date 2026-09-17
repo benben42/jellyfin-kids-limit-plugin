@@ -16,15 +16,16 @@ watch-time limits for kids — per user, per weekday, per time-of-day window —
   `Configuration/configPage.html`, `Web/dashboard.html`, `manifest.json` — keep in sync).
 - Uses the modern `IPluginServiceRegistrator` + `IHostedService` model, not the deprecated
   `IServerEntryPoint`.
-- The plugin **observes** playback and stops sessions. It never disables accounts or
-  unselects libraries — except the explicitly opt-in hard-block path (below), which saves
-  and restores whatever it touches.
+- The plugin **observes** playback and stops sessions. It never touches a Jellyfin
+  account: no policy, no access schedule, no library selection. The hard-block path that
+  used to exist was removed in 3.1 once bench-testing proved the Jellyfin 12 Android TV
+  client honors Stop (`REQUIREMENTS.md` §2.1).
 
 Source-of-truth design docs, all still current and worth reading before non-trivial changes:
 
 | Doc | Covers |
 |-----|--------|
-| `REQUIREMENTS.md` | Full spec: data model, §5 enforcement algorithm, §5.1 bonus semantics, §2.1 the Android TV risk |
+| `REQUIREMENTS.md` | Full spec: data model, §5 enforcement algorithm, §5.1 bonus semantics, §2.1 the measured stop-mechanism results |
 | `REWARDS.md` | Coins/chores design: bank cap, daily redeem cap, midnight refund, auth, storage |
 | `README.md` | User-facing install/config/API reference |
 | `docs/ADDING-CHORES.md` | Exact steps to add a chore + its art (which files, which are optional) |
@@ -43,10 +44,11 @@ Configuration/
   ChoreClipart.cs             Catalog + allow-list mapping clipart keys -> embedded files
   configPage.html             Jellyfin admin config page (embedded resource)
 Services/
-  WatchTimeTracker.cs         IHostedService: session events + 15 s maintenance timer; the engine
+  WatchTimeTracker.cs         IHostedService: session events + 5 s enforcement sweep; the engine
   LimitCalculator.cs          Pure limit math (static). Shared by tracker and API — keep it pure
-  HardBlockEnforcer.cs        Opt-in server-side blocking (access schedule / playback permission)
+  LegacyBlockRestorer.cs      One-shot upgrade cleanup: undoes the retired hard block
   PlaybackTerminator.cs       Stop -> Pause -> kill transcode job -> close live stream
+  StopMethodTester.cs         Diagnostic bench: fires each stop mechanism in isolation
   RewardsService.cs           Coins: earn/claim/approve/redeem/refund, reference-title pricing
   NotificationService.cs      Push fan-out: ntfy, Pushover, Gotify, Discord, Slack, Telegram, Apprise, webhook
 State/
@@ -56,17 +58,19 @@ State/
   UserWallet.cs DailyHistoryEntry.cs
 Api/
   KidsLimitController.cs      Parent API: bonus/status/stop/allow/history
+  StopTestController.cs       Stop-method test bench page + API (diagnostic only)
   RewardsController.cs        Rewards API + serves the kid and standalone-parent HTML pages
   SettingsController.cs       GET/POST full plugin config for the standalone parent page
   Models/                     UserStatusDto, SettingsDto
 Web/
   dashboard.html              Parent dashboard inside the Jellyfin admin UI (embedded)
   parent.html                 Standalone parent app, token-only, no admin login (embedded)
+  stoptest.html               Stop-method test bench, phone-first (embedded)
   kid.html                    Picture-only kid TV page (embedded)
   clipart/*.webp|svg          Chore tile art (embedded via glob)
 android-tv/                   Gradle project: thin WebView shell around the kid page
 scripts/update_manifest.py    Upserts a version into manifest.json from build.yaml (CI only)
-spike/stop-test.sh            Phase 0 manual probe: does the real TV honor Stop?
+spike/stop-test.sh            Shell probe: does the real TV honor Stop? (see also /KidsLimit/test)
 ```
 
 There are **no tests, no linter config, no .editorconfig, and no analyzers**. CI only builds.
@@ -99,22 +103,36 @@ successor — a 10.11 server filters by `targetAbi` and will simply keep offerin
 ## How enforcement works
 
 1. `WatchTimeTracker` subscribes to `PlaybackStart` / `PlaybackProgress` / `PlaybackStopped`
-   and also sweeps `ISessionManager.Sessions` every 15 s (clients that go quiet after
-   ignoring a Stop must not escape crediting).
+   and also sweeps `ISessionManager.Sessions` every 5 s (clients that go quiet, and kids who
+   press play the moment the screen clears, must not escape). The disk-touching housekeeping
+   — rollover, pruning, forced flush — runs on every third sweep.
 2. Every tick credits the elapsed gap **only when not paused**, clamped to
    `MaxDeltaSeconds` (30) to survive long gaps/seeks. A gap over
    `SessionResetGapMinutes` (30) starts a fresh "sitting" and resets the session counter.
-3. `LimitCalculator.Compute` returns the **most restrictive** remaining of the applicable
-   session / daily / active-window caps. `null` cap = unlimited; `null` preset = unlimited.
-4. `remaining <= 0` → `PlaybackTerminator.StopSessionAsync` (re-sent every tick) plus, if
-   newly blocked, an immediate `HardBlockEnforcer.ReconcileAsync`. Near the threshold →
-   one best-effort `DisplayMessage` warning per sitting.
-5. If a session keeps accruing time past the limit for `OverLimitAlertMinutes`, a push
+3. A parent "Stop now" (`DailyState.ManuallyStopped`) is checked first and outranks any
+   remaining budget — deliberately *ahead* of the paused guard, since a paused TV is still
+   a TV to a parent. Otherwise `LimitCalculator.Compute` returns the **most restrictive**
+   remaining of the applicable session / daily / active-window caps. `null` cap =
+   unlimited; `null` preset = unlimited.
+4. `remaining <= 0` → announce, then stop. **The order is load-bearing**: the client only
+   renders a `DisplayMessage` while something is playing, so a message sent after the Stop
+   is never seen. `AnnounceThenStopAsync` sends the message, waits `StopGraceSeconds`
+   (default 6), then calls `PlaybackTerminator.StopSessionAsync` — re-sent every sweep.
+5. Three different stop messages: `LimitReached` the first time in a sitting,
+   `AlreadyOver` on every later attempt (different sentence, ~2 s grace so repeat presses
+   can't buy time), `ParentStop` for a manual stop. Messages are throttled to one per
+   `BlockedMessageCooldownSeconds` (30) per session; the *stop* is not throttled.
+6. If a session keeps accruing time past the limit for `OverLimitAlertMinutes`, a push
    notification tells the parent auto-stop appears to have failed (once per sitting).
+   **With the hard block gone this alert is the only backstop** — a direct-played file on
+   an uncooperative client cannot be interrupted server-side.
 
-Rollover to a new local day happens both on playback events and on the maintenance timer.
 The rollover archives the finished day to history and fires `StateStore.DayFinished`, which
 `RewardsService.RefundFinishedDay` uses to refund unwatched redeemed coins.
+
+`/KidsLimit/stop` does **not** stop sessions itself: it sets the manual-stop flag and calls
+`WatchTimeTracker.EnforceUserNow`, so there is exactly one enforcement path. That is why
+the tracker is registered as a singleton *and* behind `AddHostedService(sp => ...)`.
 
 ## Invariants and traps
 
@@ -144,18 +162,19 @@ overage (already inside `used`) to avoid double-counting. Without this, one rede
 every window and every sitting by its full value. `BaseRemaining` exists solely so the
 tracker can tell which seconds were running on bonus.
 
-**Zero caps must not read as "already over".** `HardBlockEnforcer.IsOverPersistentLimit`
-guards every cap check with `usage > 0`. A cap of 0 (School Day's morning window) means "no
-watching in this scope" — enforced at play time by the tracker — and must never hard-block
-an account that has watched nothing, or the kid can't even log in. The **session** cap is
-deliberately excluded from hard blocking: it's a "take a break" signal, not "done for the day".
+**Never reintroduce account mutation without re-reading REQUIREMENTS.md §12.** The plugin
+mutated user policies up to 3.0 and no longer does. `LegacyBlockRestorer` exists purely to
+rescue installs upgraded mid-block: it restores `<data>/enforcement/<userId>.json`, clears
+stale "never allowed" marker schedules even when the file is gone, and deletes the folder.
+An unreadable file restores *no* restrictions on purpose — erring toward a child locked out
+of the server is not acceptable. Do not delete this until enough time has passed that no
+one can still be upgrading from 3.0.
 
-**Hard blocks save originals before touching anything.** `BlockAsync` writes
-`<data>/enforcement/<userId>.json` (mode + `EnableMediaPlayback` + non-marker schedules)
-*before* mutating the policy; the file's existence is the authoritative "we own this block"
-marker; `UnblockAsync` restores verbatim and deletes it. `LoadOriginals` still parses the
-legacy bare-array format. A parent "Stop now" always hard-blocks regardless of the opt-in
-setting.
+**Zero caps must not read as "already over".** A cap of 0 (School Day's morning window)
+means "no watching in this scope" and is enforced at play time by the tracker when the kid
+presses play. `LimitCalculator` handles this correctly because enforcement is now purely
+play-time; there is no longer any code path that could lock an account on a cap the kid has
+not spent.
 
 **`StateStore.DayFinished` runs under the store lock.** Handlers must not call back into
 `StateStore`. `RefundFinishedDay` only touches `WalletStore`.
