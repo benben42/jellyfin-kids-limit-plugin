@@ -359,6 +359,12 @@
                 <p class="hint">⚠️ Changing the token changes this page's address — after saving, this
                     page switches to the new token automatically, but old bookmarks stop working.
                     Leaving it unchanged is always safe; it cannot be emptied from here.</p>
+                <div class="btns">
+                    <button type="button" id="btnStopTest">🛑 Stop-method test bench</button>
+                </div>
+                <p class="hint">Fires one stop mechanism at a time against a live playback session,
+                    so you can find out which ones your TV client actually honors. Diagnostic only —
+                    nothing here changes how limits are enforced.</p>
             </div>
         </div>
 
@@ -1312,6 +1318,11 @@
     $('btnCopyParentUrl').addEventListener('click', function () {
         var tok = $('setApiToken').value.trim() || token;
         copyText(publicBase() + 'parent?token=' + encodeURIComponent(tok));
+    });
+    $('btnStopTest').addEventListener('click', function () {
+        // Use the live token, not the (possibly edited, unsaved) field: the bench
+        // authenticates against what the server has right now.
+        window.open('test?token=' + encodeURIComponent(token), '_blank', 'noopener');
     });
 
     window.addEventListener('beforeunload', function (e) {

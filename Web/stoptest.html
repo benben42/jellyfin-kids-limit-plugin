@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kids Limit — stop method test bench</title>
+<style>
+  :root {
+    --bg: #14172e;
+    --card: #1e2246;
+    --card2: #262b55;
+    --line: #363c73;
+    --text: #e8eaff;
+    --dim: #9aa0d0;
+    --ok: #4ade80;
+    --bad: #f87171;
+    --warn: #fbbf24;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0 0 6em;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 16px; line-height: 1.45;
+  }
+  header {
+    position: sticky; top: 0; z-index: 5;
+    background: var(--bg); border-bottom: 1px solid var(--line);
+    padding: .8em 1em .6em;
+  }
+  h1 { font-size: 1.1em; margin: 0 0 .5em; }
+  h2 {
+    font-size: .8em; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--dim); margin: 1.6em 1em .6em;
+  }
+  main { padding: 0 1em; max-width: 46em; margin: 0 auto; }
+  select, button { font: inherit; color: inherit; }
+  select {
+    background: var(--card2); border: 1px solid var(--line);
+    border-radius: .5em; padding: .5em .7em; width: 100%;
+  }
+  .diag {
+    background: var(--card); border: 1px solid var(--line); border-radius: .8em;
+    padding: .8em 1em; margin: 1em 0; font-size: .85em;
+  }
+  .diag .row { display: flex; justify-content: space-between; gap: 1em; padding: .15em 0; }
+  .diag .row span:first-child { color: var(--dim); }
+  .diag .row span:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+  .pill {
+    display: inline-block; padding: .05em .6em; border-radius: 1em;
+    font-size: .85em; font-weight: 600;
+  }
+  .pill.ok { background: rgba(74,222,128,.15); color: var(--ok); }
+  .pill.bad { background: rgba(248,113,113,.15); color: var(--bad); }
+  .pill.warn { background: rgba(251,191,36,.15); color: var(--warn); }
+  .method {
+    background: var(--card); border: 1px solid var(--line); border-radius: .8em;
+    margin: .6em 0; overflow: hidden;
+  }
+  .method > button.fire {
+    display: block; width: 100%; text-align: left; background: none; border: 0;
+    padding: .85em 1em; font-size: 1.02em; font-weight: 600; cursor: pointer;
+  }
+  .method > button.fire:active { background: var(--card2); }
+  .method .desc { padding: 0 1em .8em; font-size: .85em; color: var(--dim); margin-top: -.4em; }
+  .method .watch { padding: 0 1em .9em; font-size: .85em; color: var(--warn); }
+  .sev { font-size: .75em; padding: .1em .5em; border-radius: .4em; margin-left: .5em; vertical-align: .15em; }
+  .sev.probe    { background: #2b6cb0; }
+  .sev.command  { background: #2f855a; }
+  .sev.server   { background: #7b5ea7; }
+  .sev.session  { background: #a06a2c; }
+  .sev.policy   { background: #a03c6a; }
+  .sev.nuclear  { background: #a02c2c; }
+  .sev.reset    { background: #444b8a; }
+  .result {
+    border-top: 1px solid var(--line); background: var(--card2);
+    padding: .8em 1em; font-size: .85em;
+  }
+  .result ul { margin: .5em 0 0; padding-left: 1.2em; }
+  .result li { margin: .15em 0; }
+  .result li.no { color: var(--bad); }
+  .verdict { display: flex; gap: .5em; margin-top: .8em; flex-wrap: wrap; }
+  .verdict button {
+    flex: 1 1 8em; padding: .6em; border-radius: .5em; cursor: pointer;
+    border: 1px solid var(--line); background: var(--card);
+  }
+  .verdict button.sel-yes { background: rgba(74,222,128,.25); border-color: var(--ok); }
+  .verdict button.sel-part { background: rgba(251,191,36,.25); border-color: var(--warn); }
+  .verdict button.sel-no { background: rgba(248,113,113,.25); border-color: var(--bad); }
+  .bar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+    display: flex; gap: .6em; padding: .7em 1em calc(.7em + env(safe-area-inset-bottom));
+    background: rgba(20,23,46,.96); border-top: 1px solid var(--line);
+  }
+  .bar button {
+    flex: 1; padding: .8em; border-radius: .6em; border: 0; font-weight: 700; cursor: pointer;
+  }
+  .bar .release { background: #3e8f5a; color: #fff; }
+  .bar .copy { background: var(--card2); color: var(--text); border: 1px solid var(--line); }
+  .note { font-size: .82em; color: var(--dim); margin: .8em 0; }
+  .held { background: rgba(248,113,113,.15); border: 1px solid var(--bad); color: var(--bad);
+          border-radius: .6em; padding: .6em .8em; margin: .8em 0; font-size: .85em; }
+  textarea {
+    width: 100%; height: 14em; background: #0e1024; color: var(--text);
+    border: 1px solid var(--line); border-radius: .6em; padding: .7em;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8em;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🛑 Stop-method test bench</h1>
+  <select id="user"></select>
+</header>
+
+<main>
+  <div id="held" class="held" hidden>
+    A test block is currently pinned on this user — they cannot watch (and may not be able to
+    log in) until you press <b>Release everything</b>.
+  </div>
+
+  <div class="diag" id="diag">Loading session diagnostics…</div>
+
+  <p class="note">
+    Fire one method, look at the TV, then tap <b>stopped / partly / nothing</b> to record what
+    happened. When you have been through the list, hit <b>Copy report</b> and paste it back.
+  </p>
+
+  <div id="methods"></div>
+
+  <h2>Report</h2>
+  <textarea id="report" readonly></textarea>
+</main>
+
+<div class="bar">
+  <button class="copy" id="copyBtn">Copy report</button>
+  <button class="release" id="releaseBtn">Release everything</button>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var TOKEN = new URLSearchParams(location.search).get('token') || '';
+  var STORE = 'kidslimit.stoptest.verdicts';
+  var methods = [];
+  var verdicts = {};
+  var currentUser = '';
+
+  try { verdicts = JSON.parse(localStorage.getItem(STORE) || '{}'); } catch (e) { verdicts = {}; }
+
+  function api(path, opts) {
+    var sep = path.indexOf('?') === -1 ? '?' : '&';
+    return fetch(path + sep + 'token=' + encodeURIComponent(TOKEN),
+      Object.assign({ cache: 'no-store' }, opts || {}))
+      .then(function (r) {
+        if (!r.ok) { throw new Error('HTTP ' + r.status); }
+        return r.json();
+      });
+  }
+
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) { n.className = cls; }
+    if (text !== undefined) { n.textContent = text; }
+    return n;
+  }
+
+  // ---------------------------------------------------------------- diagnostics
+
+  function row(parent, label, value, pill) {
+    var r = el('div', 'row');
+    r.appendChild(el('span', null, label));
+    var v = el('span');
+    if (pill) {
+      var p = el('span', 'pill ' + pill, String(value));
+      v.appendChild(p);
+    } else {
+      v.textContent = String(value);
+    }
+    r.appendChild(v);
+    parent.appendChild(r);
+  }
+
+  function renderDiag(data) {
+    var box = document.getElementById('diag');
+    box.textContent = '';
+    document.getElementById('held').hidden = !data.TestHoldActive;
+
+    var playing = (data.Sessions || []).filter(function (s) { return s.NowPlaying; });
+    var shown = playing.length ? playing : (data.Sessions || []);
+
+    if (!shown.length) {
+      box.appendChild(el('div', null, 'No sessions for this user. Open Jellyfin on the TV.'));
+      return;
+    }
+
+    shown.slice(0, 3).forEach(function (s, i) {
+      if (i) { box.appendChild(el('hr')); }
+      var title = el('div');
+      title.style.fontWeight = '700';
+      title.style.marginBottom = '.3em';
+      title.textContent = (s.Client || '?') + ' ' + (s.Version || '') + ' — ' + (s.DeviceName || '?');
+      box.appendChild(title);
+
+      row(box, 'Now playing', s.NowPlaying ? s.NowPlaying.Name : '— nothing —',
+        s.NowPlaying ? 'ok' : 'warn');
+      if (s.PlayState) {
+        // The single most important line on this page: DirectPlay means no amount of
+        // server-side stream teardown can interrupt the stream that is already running.
+        row(box, 'Play method', s.PlayState.PlayMethod,
+          s.PlayState.PlayMethod === 'DirectPlay' ? 'bad' : 'ok');
+        row(box, 'Paused', s.PlayState.IsPaused ? 'yes' : 'no');
+        if (s.PlayState.LiveStreamId) { row(box, 'Live stream', 'yes', 'ok'); }
+      }
+      row(box, 'Accepts remote control', s.SupportsRemoteControl ? 'yes' : 'NO',
+        s.SupportsRemoteControl ? 'ok' : 'bad');
+      row(box, 'Accepts media control', s.SupportsMediaControl ? 'yes' : 'NO',
+        s.SupportsMediaControl ? 'ok' : 'bad');
+      row(box, 'Controllers', (s.Controllers || []).join(', ') || '(none — commands go nowhere)',
+        (s.Controllers || []).length ? null : 'bad');
+      row(box, 'Transcoding', s.Transcoding
+        ? (s.Transcoding.Container || '?') + ' · ' + (s.Transcoding.Reasons || '')
+        : 'no');
+      row(box, 'Last check-in', s.LastPlaybackCheckIn);
+      var cmds = (s.SupportedCommands || []);
+      row(box, 'Advertises Stop/GoHome/Back',
+        ['PlayState', 'GoHome', 'Back'].filter(function (c) { return cmds.indexOf(c) >= 0; }).join(', ')
+          || 'none of them');
+    });
+
+    var ts = el('div', 'note', 'server time ' + data.ServerLocalTime);
+    ts.style.margin = '.6em 0 0';
+    box.appendChild(ts);
+  }
+
+  function refreshDiag() {
+    if (!currentUser) { return Promise.resolve(); }
+    return api('sessions?user=' + encodeURIComponent(currentUser))
+      .then(renderDiag)
+      .catch(function (e) {
+        document.getElementById('diag').textContent = 'Diagnostics failed: ' + e.message;
+      });
+  }
+
+  // ---------------------------------------------------------------- methods
+
+  function renderMethods() {
+    var host = document.getElementById('methods');
+    host.textContent = '';
+    var lastGroup = null;
+
+    methods.forEach(function (m) {
+      if (m.Group !== lastGroup) {
+        lastGroup = m.Group;
+        host.appendChild(el('h2', null, m.Group));
+      }
+
+      var card = el('div', 'method');
+      card.id = 'm-' + m.Id;
+
+      var btn = el('button', 'fire');
+      btn.appendChild(document.createTextNode(m.Title));
+      btn.appendChild(el('span', 'sev ' + m.Severity, m.Severity));
+      btn.addEventListener('click', function () { run(m); });
+      card.appendChild(btn);
+
+      card.appendChild(el('div', 'desc', m.Description));
+      card.appendChild(el('div', 'watch', '👀 ' + m.WatchFor));
+      host.appendChild(card);
+    });
+
+    Object.keys(verdicts).forEach(function (id) {
+      var m = methods.filter(function (x) { return x.Id === id; })[0];
+      if (m) { renderResult(m, null, verdicts[id]); }
+    });
+  }
+
+  function renderResult(m, result, verdict) {
+    var card = document.getElementById('m-' + m.Id);
+    if (!card) { return; }
+    var old = card.querySelector('.result');
+    if (old) { old.remove(); }
+
+    var box = el('div', 'result');
+
+    if (result) {
+      var sum = el('div', null, result.Summary || '');
+      sum.style.fontWeight = '600';
+      box.appendChild(sum);
+
+      if (result.Targets && result.Targets.length) {
+        box.appendChild(el('div', null, 'target: ' + result.Targets.join(', ')));
+      }
+
+      var ul = el('ul');
+      (result.Steps || []).forEach(function (s) {
+        var li = el('li', s.Ok ? 'yes' : 'no',
+          (s.Ok ? '✓ ' : '✗ ') + s.Name + (s.Error ? ' — ' + s.Error : ''));
+        ul.appendChild(li);
+      });
+      box.appendChild(ul);
+    }
+
+    var v = el('div', 'verdict');
+    [['yes', 'It stopped ✅'], ['part', 'Partly 🤏'], ['no', 'Nothing ❌']].forEach(function (pair) {
+      var b = el('button', verdict === pair[0] ? 'sel-' + pair[0] : null, pair[1]);
+      b.addEventListener('click', function () {
+        verdicts[m.Id] = pair[0];
+        try { localStorage.setItem(STORE, JSON.stringify(verdicts)); } catch (e) { /* private mode */ }
+        renderResult(m, result, pair[0]);
+        buildReport();
+      });
+      v.appendChild(b);
+    });
+    box.appendChild(v);
+
+    card.appendChild(box);
+  }
+
+  function run(m) {
+    var card = document.getElementById('m-' + m.Id);
+    var btn = card.querySelector('button.fire');
+    btn.disabled = true;
+    var label = btn.firstChild.nodeValue;
+    btn.firstChild.nodeValue = '… ' + label;
+
+    api('run?user=' + encodeURIComponent(currentUser) + '&method=' + encodeURIComponent(m.Id),
+      { method: 'POST' })
+      .then(function (res) {
+        renderResult(m, res, verdicts[m.Id]);
+      })
+      .catch(function (e) {
+        renderResult(m, { Summary: 'Request failed: ' + e.message, Steps: [] }, verdicts[m.Id]);
+      })
+      .then(function () {
+        btn.disabled = false;
+        btn.firstChild.nodeValue = label;
+        return refreshDiag();
+      });
+  }
+
+  // ---------------------------------------------------------------- report
+
+  function buildReport() {
+    var lines = ['| method | result |', '| --- | --- |'];
+    var names = { yes: 'STOPPED', part: 'partly', no: 'nothing' };
+    methods.forEach(function (m) {
+      if (verdicts[m.Id]) {
+        lines.push('| ' + m.Title + ' (`' + m.Id + '`) | ' + names[verdicts[m.Id]] + ' |');
+      }
+    });
+    if (lines.length === 2) { lines = ['(no results recorded yet)']; }
+    document.getElementById('report').value = lines.join('\n');
+  }
+
+  document.getElementById('copyBtn').addEventListener('click', function () {
+    var ta = document.getElementById('report');
+    ta.removeAttribute('readonly');
+    ta.select();
+    try { document.execCommand('copy'); } catch (e) { /* user can select manually */ }
+    ta.setAttribute('readonly', 'readonly');
+    if (navigator.clipboard) { navigator.clipboard.writeText(ta.value).catch(function () {}); }
+    this.textContent = 'Copied ✓';
+    var self = this;
+    setTimeout(function () { self.textContent = 'Copy report'; }, 1500);
+  });
+
+  document.getElementById('releaseBtn').addEventListener('click', function () {
+    var m = methods.filter(function (x) { return x.Id === 'release'; })[0];
+    if (m) { run(m); }
+  });
+
+  // ---------------------------------------------------------------- boot
+
+  api('methods').then(function (data) {
+    methods = data.Methods || [];
+
+    var sel = document.getElementById('user');
+    (data.Users || []).forEach(function (u) {
+      var o = document.createElement('option');
+      o.value = u.UserId;
+      o.textContent = u.Name + (u.Managed ? ' (managed)' : '');
+      sel.appendChild(o);
+    });
+    currentUser = sel.value || '';
+    sel.addEventListener('change', function () {
+      currentUser = sel.value;
+      refreshDiag();
+    });
+
+    renderMethods();
+    buildReport();
+    refreshDiag();
+    setInterval(refreshDiag, 5000);
+  }).catch(function (e) {
+    document.getElementById('diag').textContent =
+      'Could not load the test bench: ' + e.message + '. Check the token in the URL.';
+  });
+})();
+</script>
+</body>
+</html>
