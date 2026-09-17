@@ -26,11 +26,35 @@ public class SettingsDto
     /// <summary>Gets or sets the server's public base URL used in notification links.</summary>
     public string PublicBaseUrl { get; set; } = string.Empty;
 
-    /// <summary>Gets or sets a value indicating whether over-limit kids are hard-blocked server-side.</summary>
-    public bool EnforceViaAccessSchedule { get; set; }
+    /// <summary>Gets or sets the header of the near-limit warning shown on the TV.</summary>
+    public string WarnMessageHeader { get; set; } = PluginConfiguration.DefaultWarnHeader;
 
-    /// <summary>Gets or sets the hard-block mode (AccessSchedule / DisablePlayback).</summary>
-    public string HardEnforcementMode { get; set; } = PluginConfiguration.ModeAccessSchedule;
+    /// <summary>Gets or sets the body of the near-limit warning. <c>{minutes}</c> / <c>{name}</c> are substituted.</summary>
+    public string WarnMessageText { get; set; } = PluginConfiguration.DefaultWarnText;
+
+    /// <summary>Gets or sets the header shown when the limit is reached.</summary>
+    public string LimitMessageHeader { get; set; } = PluginConfiguration.DefaultLimitHeader;
+
+    /// <summary>Gets or sets the body shown when the limit is reached.</summary>
+    public string LimitMessageText { get; set; } = PluginConfiguration.DefaultLimitText;
+
+    /// <summary>Gets or sets the header shown when an out-of-time kid presses play again.</summary>
+    public string BlockedMessageHeader { get; set; } = PluginConfiguration.DefaultBlockedHeader;
+
+    /// <summary>Gets or sets the body shown when an out-of-time kid presses play again.</summary>
+    public string BlockedMessageText { get; set; } = PluginConfiguration.DefaultBlockedText;
+
+    /// <summary>Gets or sets the header shown for a parent "Stop now".</summary>
+    public string ParentStopMessageHeader { get; set; } = PluginConfiguration.DefaultParentStopHeader;
+
+    /// <summary>Gets or sets the body shown for a parent "Stop now".</summary>
+    public string ParentStopMessageText { get; set; } = PluginConfiguration.DefaultParentStopText;
+
+    /// <summary>Gets or sets how many seconds a message stays on screen.</summary>
+    public int MessageSeconds { get; set; } = 8;
+
+    /// <summary>Gets or sets the pause between showing the message and stopping playback.</summary>
+    public int StopGraceSeconds { get; set; } = 6;
 
     /// <summary>Gets or sets a value indicating whether the "auto-stop failed" parent alert is on.</summary>
     public bool OverLimitAlertEnabled { get; set; }

@@ -98,8 +98,6 @@
   .bar .release { background: #3e8f5a; color: #fff; }
   .bar .copy { background: var(--card2); color: var(--text); border: 1px solid var(--line); }
   .note { font-size: .82em; color: var(--dim); margin: .8em 0; }
-  .held { background: rgba(248,113,113,.15); border: 1px solid var(--bad); color: var(--bad);
-          border-radius: .6em; padding: .6em .8em; margin: .8em 0; font-size: .85em; }
   textarea {
     width: 100%; height: 14em; background: #0e1024; color: var(--text);
     border: 1px solid var(--line); border-radius: .6em; padding: .7em;
@@ -115,11 +113,6 @@
 </header>
 
 <main>
-  <div id="held" class="held" hidden>
-    A test block is currently pinned on this user — they cannot watch (and may not be able to
-    log in) until you press <b>Release everything</b>.
-  </div>
-
   <div class="diag" id="diag">Loading session diagnostics…</div>
 
   <p class="note">
@@ -144,6 +137,11 @@
 
   var TOKEN = new URLSearchParams(location.search).get('token') || '';
   var STORE = 'kidslimit.stoptest.verdicts';
+
+  // This page is served from /KidsLimit/test, so a *relative* fetch('methods') resolves
+  // against /KidsLimit/ — one level too high — and 404s. Anchor every call on our own
+  // path instead, which also survives being reverse-proxied under a path prefix.
+  var BASE = location.pathname.replace(/\/+$/, '');
   var methods = [];
   var verdicts = {};
   var currentUser = '';
@@ -151,8 +149,9 @@
   try { verdicts = JSON.parse(localStorage.getItem(STORE) || '{}'); } catch (e) { verdicts = {}; }
 
   function api(path, opts) {
-    var sep = path.indexOf('?') === -1 ? '?' : '&';
-    return fetch(path + sep + 'token=' + encodeURIComponent(TOKEN),
+    var url = BASE + '/' + path;
+    var sep = url.indexOf('?') === -1 ? '?' : '&';
+    return fetch(url + sep + 'token=' + encodeURIComponent(TOKEN),
       Object.assign({ cache: 'no-store' }, opts || {}))
       .then(function (r) {
         if (!r.ok) { throw new Error('HTTP ' + r.status); }
@@ -186,7 +185,6 @@
   function renderDiag(data) {
     var box = document.getElementById('diag');
     box.textContent = '';
-    document.getElementById('held').hidden = !data.TestHoldActive;
 
     var playing = (data.Sessions || []).filter(function (s) { return s.NowPlaying; });
     var shown = playing.length ? playing : (data.Sessions || []);
@@ -395,8 +393,13 @@
     refreshDiag();
     setInterval(refreshDiag, 5000);
   }).catch(function (e) {
+    // 401 is the only failure the token explains; anything else is a routing or
+    // server-side problem, and saying "check the token" sends you down the wrong path.
     document.getElementById('diag').textContent =
-      'Could not load the test bench: ' + e.message + '. Check the token in the URL.';
+      'Could not load the test bench: ' + e.message +
+      (e.message.indexOf('401') >= 0
+        ? '. The token in the URL is not the configured parent token.'
+        : '. Tried ' + BASE + '/methods — is the plugin DLL up to date?');
   });
 })();
 </script>

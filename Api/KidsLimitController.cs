@@ -30,8 +30,8 @@ public class KidsLimitController : ControllerBase
     private readonly StateStore _store;
     private readonly ISessionManager _sessionManager;
     private readonly IUserManager _userManager;
-    private readonly HardBlockEnforcer _enforcer;
     private readonly PlaybackTerminator _terminator;
+    private readonly WatchTimeTracker _tracker;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="KidsLimitController"/> class.
@@ -39,20 +39,20 @@ public class KidsLimitController : ControllerBase
     /// <param name="store">State store.</param>
     /// <param name="sessionManager">Session manager.</param>
     /// <param name="userManager">User manager.</param>
-    /// <param name="enforcer">Hard-block enforcer.</param>
     /// <param name="terminator">Playback terminator.</param>
+    /// <param name="tracker">The watch-time tracker, which owns the enforcement path.</param>
     public KidsLimitController(
         StateStore store,
         ISessionManager sessionManager,
         IUserManager userManager,
-        HardBlockEnforcer enforcer,
-        PlaybackTerminator terminator)
+        PlaybackTerminator terminator,
+        WatchTimeTracker tracker)
     {
         _store = store;
         _sessionManager = sessionManager;
         _userManager = userManager;
-        _enforcer = enforcer;
         _terminator = terminator;
+        _tracker = tracker;
     }
 
     private PluginConfiguration Config =>
@@ -89,10 +89,8 @@ public class KidsLimitController : ControllerBase
         var today = LimitCalculator.DateKey(localNow);
         _store.GrantBonus(resolved.Value.UserIdN, today, (long)minutes * 60);
 
-        // Immediately reconcile the hard block so bonus time lets a blocked kid back in
-        // right away instead of waiting for the next background tick.
-        _ = _enforcer.ReconcileAsync(Config, today, localNow);
-
+        // Nothing else to do: the tracker recomputes the remaining budget on its next pass
+        // (within seconds), so extra time simply stops the stopping.
         return BuildStatus(resolved.Value);
     }
 
@@ -146,16 +144,15 @@ public class KidsLimitController : ControllerBase
     }
 
     /// <summary>
-    /// Immediately stops a user and hard-blocks them for the rest of the day. The block is
-    /// applied server-side (using the configured hard-enforcement mode) so playback stops
-    /// even on clients that ignore the server's Stop command (e.g. Android TV), and it
-    /// persists across a "press play again" until the parent grants bonus, calls
-    /// <see cref="Allow"/>, or midnight. Stop/Pause commands are also sent and any
-    /// transcode/live stream is torn down for immediate effect.
+    /// Stops a user now and keeps them stopped for the rest of the day. The hold lives in
+    /// the day's state, so it survives a restart and re-fires every time the child presses
+    /// play, until the parent grants bonus, calls <see cref="Allow"/>, or midnight arrives.
+    /// Nothing about the Jellyfin account is touched — they can still browse, and they get
+    /// an on-screen message explaining who stopped the TV.
     /// </summary>
     /// <param name="user">User id or name.</param>
     /// <param name="token">Shared secret.</param>
-    /// <returns>Number of sessions the Stop command was sent to.</returns>
+    /// <returns>Number of playing sessions that were acted on.</returns>
     [HttpPost("stop")]
     public async Task<ActionResult<object>> Stop(
         [FromQuery] string user,
@@ -174,26 +171,34 @@ public class KidsLimitController : ControllerBase
 
         var localNow = DateTime.Now;
         var today = LimitCalculator.DateKey(localNow);
-
-        // Persist the manual stop, then reconcile the access schedule so the hard block is
-        // applied right away (works even where the Stop playstate command is ignored). This
-        // runs regardless of the auto-enforcement setting — it's a deliberate parent action.
         _store.SetManualStop(resolved.Value.UserIdN, today, true);
-        await _enforcer.ReconcileAsync(Config, today, localNow).ConfigureAwait(false);
 
+        // Hand the actual stopping to the tracker rather than repeating it here. It owns
+        // the announce-then-stop sequence — the child sees "a grown-up turned the TV off"
+        // and gets a few seconds to read it — and routing through it keeps one enforcement
+        // path, so the parent stop cannot drift out of step with the limit stop.
+        var cfg = Plugin.Instance?.FindUser(resolved.Value.UserIdN);
+        if (cfg?.Enabled == true)
+        {
+            return new { stopped = _tracker.EnforceUserNow(resolved.Value.UserGuid) };
+        }
+
+        // Not a managed kid, so the tracker ignores them entirely (unconfigured users are
+        // unlimited adults). Still honor an explicit parent stop, bluntly.
         var stopped = await _terminator.StopAllSessionsAsync(resolved.Value.UserGuid).ConfigureAwait(false);
         return new { stopped };
     }
 
     /// <summary>
-    /// Lifts a parent "Stop now" hold, restoring the user's access schedule so they can play
-    /// again (subject to their normal budget). Does not grant any extra time.
+    /// Lifts a parent "Stop now" hold so the user can play again, subject to their normal
+    /// budget. Does not grant any extra time — a kid who is out of time will simply be
+    /// stopped again by the limit instead of by the hold.
     /// </summary>
     /// <param name="user">User id or name.</param>
     /// <param name="token">Shared secret.</param>
     /// <returns>The user's updated status.</returns>
     [HttpPost("allow")]
-    public async Task<ActionResult<UserStatusDto>> Allow(
+    public ActionResult<UserStatusDto> Allow(
         [FromQuery] string user,
         [FromQuery] string? token = null)
     {
@@ -208,11 +213,8 @@ public class KidsLimitController : ControllerBase
             return NotFound($"Unknown user '{user}'.");
         }
 
-        var localNow = DateTime.Now;
-        var today = LimitCalculator.DateKey(localNow);
-
+        var today = LimitCalculator.DateKey(DateTime.Now);
         _store.SetManualStop(resolved.Value.UserIdN, today, false);
-        await _enforcer.ReconcileAsync(Config, today, localNow).ConfigureAwait(false);
 
         return BuildStatus(resolved.Value);
     }

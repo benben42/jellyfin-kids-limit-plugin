@@ -331,18 +331,36 @@
                     Presets can cap each window separately.</p>
             </div>
             <div class="card">
-                <div class="groupTitle">Hard enforcement</div>
-                <label class="switch"><input type="checkbox" id="setEnforce" /><span class="knob"></span>
-                    <span>Hard-block kids at the server when over limit</span></label>
-                <div class="field">
-                    <label>Hard-block mode</label>
-                    <select id="setEnforceMode">
-                        <option value="AccessSchedule">Block all access — most forceful</option>
-                        <option value="DisablePlayback">Block playback only — kid can still browse</option>
-                    </select>
-                </div>
-                <p class="hint">Recommended when a client (e.g. Android TV) ignores the Stop command.
-                    Access is restored automatically when back under limit, on bonus, or at midnight.</p>
+                <div class="groupTitle">What the TV says</div>
+                <p class="hint">The client only draws a message <em>while something is playing</em>, so
+                    the plugin shows the message first and stops a few seconds later — otherwise the
+                    screen just goes dark with no explanation. Emoji work, and do the talking for a
+                    child who can't read yet. <code>{minutes}</code> = minutes left,
+                    <code>{name}</code> = the kid's name.</p>
+                <div class="field"><label>Warning — title</label>
+                    <input type="text" id="setWarnHeader" /></div>
+                <div class="field"><label>Warning — text</label>
+                    <input type="text" id="setWarnText" /></div>
+                <div class="field"><label>Time's up — title</label>
+                    <input type="text" id="setLimitHeader" /></div>
+                <div class="field"><label>Time's up — text</label>
+                    <input type="text" id="setLimitText" /></div>
+                <div class="field"><label>Tried to start again — title</label>
+                    <input type="text" id="setBlockedHeader" /></div>
+                <div class="field"><label>Tried to start again — text</label>
+                    <input type="text" id="setBlockedText" /></div>
+                <div class="field"><label>You pressed Stop now — title</label>
+                    <input type="text" id="setParentStopHeader" /></div>
+                <div class="field"><label>You pressed Stop now — text</label>
+                    <input type="text" id="setParentStopText" /></div>
+                <div class="field"><label>Message stays on screen (seconds)</label>
+                    <input type="number" min="1" max="60" id="setMessageSeconds" /></div>
+                <div class="field"><label>Reading time before playback stops (seconds)</label>
+                    <input type="number" min="0" max="60" id="setStopGrace" /></div>
+                <p class="hint">0 stops instantly. This is watch time the kid still gets — a repeat
+                    attempt after they're already out of time always uses a much shorter pause, so
+                    pressing play over and over can't buy extra minutes. Leave a box empty to restore
+                    its default.</p>
             </div>
             <div class="card">
                 <div class="groupTitle">Addresses &amp; access</div>
@@ -409,7 +427,29 @@
         { Id: 'recovery-day', Name: 'Recovery Day', DailyCapMinutes: null, SessionCapMinutes: null, MorningCapMinutes: null, AfternoonCapMinutes: null, EveningCapMinutes: null }
     ];
 
+    // The on-screen TV messages, paired with the defaults from PluginConfiguration so a
+    // cleared box can be restored here instead of posting an empty string the server would
+    // have to second-guess.
+    var MESSAGE_FIELDS = [
+        { id: 'setWarnHeader', key: 'WarnMessageHeader', def: '⏰ Almost done' },
+        { id: 'setWarnText', key: 'WarnMessageText', def: '⏰ {minutes} more minutes of TV, then it\'s time to stop. 📺' },
+        { id: 'setLimitHeader', key: 'LimitMessageHeader', def: '🛑 Time\'s up!' },
+        { id: 'setLimitText', key: 'LimitMessageText', def: '📺💤 No more TV right now. 🪙 Do a chore to earn more time!' },
+        { id: 'setBlockedHeader', key: 'BlockedMessageHeader', def: '🛑 TV is sleeping' },
+        { id: 'setBlockedText', key: 'BlockedMessageText', def: '📺💤 Not now. 🪙 Earn coins with a chore, then you can watch!' },
+        { id: 'setParentStopHeader', key: 'ParentStopMessageHeader', def: '🛑 Stopped' },
+        { id: 'setParentStopText', key: 'ParentStopMessageText', def: '📺💤 A grown-up turned the TV off. 🤗' }
+    ];
+
     function $(id) { return document.getElementById(id); }
+
+    /** Reads a message box, falling back to its shipped default when blanked. */
+    function msg(id) {
+        var f = MESSAGE_FIELDS.filter(function (x) { return x.id === id; })[0];
+        var v = ($(id).value || '').trim();
+        return v || (f ? f.def : '');
+    }
+
     function esc(s) { return (s === null || s === undefined ? '' : s).toString().replace(/[&<>"]/g, function (c) {
         return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
     function norm(s) { return (s || '').toString().replace(/-/g, '').toLowerCase(); }
@@ -1125,8 +1165,11 @@
         $('setEvening').value = minutesToTime(S.EveningStartMinutes || 1080);
         $('setPublicBase').value = S.PublicBaseUrl || '';
         $('setApiToken').value = S.BonusApiToken || '';
-        $('setEnforce').checked = !!S.EnforceViaAccessSchedule;
-        $('setEnforceMode').value = S.HardEnforcementMode === 'DisablePlayback' ? 'DisablePlayback' : 'AccessSchedule';
+        MESSAGE_FIELDS.forEach(function (f) {
+            $(f.id).value = S[f.key] == null ? f.def : S[f.key];
+        });
+        $('setMessageSeconds').value = S.MessageSeconds || 8;
+        $('setStopGrace').value = S.StopGraceSeconds == null ? 6 : S.StopGraceSeconds;
         $('setOverLimitAlert').checked = S.OverLimitAlertEnabled !== false;
         $('setOverLimitMinutes').value = S.OverLimitAlertMinutes > 0 ? S.OverLimitAlertMinutes : 3;
         $('setCoinMinutes').value = S.CoinMinutes || 5;
@@ -1157,8 +1200,16 @@
             EveningStartMinutes: timeToMinutes($('setEvening').value),
             BonusApiToken: $('setApiToken').value.trim(),
             PublicBaseUrl: $('setPublicBase').value.trim(),
-            EnforceViaAccessSchedule: $('setEnforce').checked,
-            HardEnforcementMode: $('setEnforceMode').value,
+            WarnMessageHeader: msg('setWarnHeader'),
+            WarnMessageText: msg('setWarnText'),
+            LimitMessageHeader: msg('setLimitHeader'),
+            LimitMessageText: msg('setLimitText'),
+            BlockedMessageHeader: msg('setBlockedHeader'),
+            BlockedMessageText: msg('setBlockedText'),
+            ParentStopMessageHeader: msg('setParentStopHeader'),
+            ParentStopMessageText: msg('setParentStopText'),
+            MessageSeconds: Math.min(60, Math.max(1, parseInt($('setMessageSeconds').value, 10) || 8)),
+            StopGraceSeconds: Math.min(60, Math.max(0, parseInt($('setStopGrace').value, 10) || 0)),
             OverLimitAlertEnabled: $('setOverLimitAlert').checked,
             OverLimitAlertMinutes: parseInt($('setOverLimitMinutes').value, 10) || 3,
             CoinMinutes: parseInt($('setCoinMinutes').value, 10) || 5,

@@ -14,7 +14,18 @@ namespace Jellyfin.Plugin.KidsLimit.Services;
 /// <summary>
 /// Hosted background service that observes playback via <see cref="ISessionManager"/>,
 /// accumulates active-playing time into <see cref="DailyState"/>, and enforces limits by
-/// sending Stop (and best-effort DisplayMessage) commands. Implements Phases 2 &amp; 3.
+/// telling the client to stop — and telling the child why, first.
+///
+/// <para>
+/// Enforcement is deliberately a single mechanism now. The plugin used to also mutate
+/// Jellyfin user policies (access schedule / playback permission) because the Android TV
+/// client was documented as ignoring the Stop command; bench-testing the Jellyfin 12
+/// client showed it honors Stop, Pause and Seek, so the policy path was removed. What
+/// remains is "ask the client to stop, and keep asking" — which never locks a child out of
+/// the server, never leaves an account in a half-modified state, and lets the TV show a
+/// message explaining itself. The cost is that there is no fallback if a future client
+/// regresses, which is what the over-limit watchdog exists to shout about.
+/// </para>
 /// </summary>
 public sealed class WatchTimeTracker : IHostedService, IDisposable
 {
@@ -24,16 +35,31 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
     // A gap larger than this starts a fresh "sitting" (resets the session-cap counter).
     private const int SessionResetGapMinutes = 30;
 
+    // How often the enforcement sweep runs. Short, because it is the safety net for a
+    // child who presses play again the moment the screen clears: a PlaybackStart event
+    // normally catches that instantly, but a client that starts quietly must not get a
+    // free quarter-minute. The sweep itself is a cheap in-memory walk of live sessions.
+    private const int SweepSeconds = 5;
+
+    // The housekeeping in OnMaintenance (rollover, pruning, forced flush) is not urgent
+    // and involves disk, so it runs on every Nth sweep rather than every sweep.
+    private const int MaintenanceEverySweeps = 3;
+
+    // Don't re-show the "TV is sleeping" message more than this often per session, or a
+    // child holding the play button turns it into a strobe.
+    private const int BlockedMessageCooldownSeconds = 30;
+
     private readonly ISessionManager _sessionManager;
     private readonly StateStore _store;
     private readonly WalletStore _wallets;
     private readonly RewardsService _rewards;
-    private readonly HardBlockEnforcer _enforcer;
     private readonly PlaybackTerminator _terminator;
     private readonly NotificationService _notifications;
+    private readonly LegacyBlockRestorer _legacyRestorer;
     private readonly ILogger<WatchTimeTracker> _logger;
 
-    private Timer? _maintenanceTimer;
+    private Timer? _sweepTimer;
+    private int _sweepCount;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="WatchTimeTracker"/> class.
@@ -42,27 +68,27 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
     /// <param name="store">State store.</param>
     /// <param name="wallets">Wallet store.</param>
     /// <param name="rewards">Rewards service.</param>
-    /// <param name="enforcer">Hard-block enforcer.</param>
     /// <param name="terminator">Playback terminator.</param>
     /// <param name="notifications">Push-notification fan-out (over-limit alerts).</param>
+    /// <param name="legacyRestorer">One-shot cleanup of the retired hard-block state.</param>
     /// <param name="logger">Logger.</param>
     public WatchTimeTracker(
         ISessionManager sessionManager,
         StateStore store,
         WalletStore wallets,
         RewardsService rewards,
-        HardBlockEnforcer enforcer,
         PlaybackTerminator terminator,
         NotificationService notifications,
+        LegacyBlockRestorer legacyRestorer,
         ILogger<WatchTimeTracker> logger)
     {
         _sessionManager = sessionManager;
         _store = store;
         _wallets = wallets;
         _rewards = rewards;
-        _enforcer = enforcer;
         _terminator = terminator;
         _notifications = notifications;
+        _legacyRestorer = legacyRestorer;
         _logger = logger;
     }
 
@@ -77,15 +103,20 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
         // Refund redeemed-but-unwatched coins when a day rolls over (REWARDS.md).
         _store.DayFinished = _rewards.RefundFinishedDay;
 
+        // Undo anything the retired hard-block enforcer may still be holding. Fire and
+        // forget: an install upgraded mid-block must not wait on user-policy writes to
+        // start tracking, and the restorer swallows its own failures.
+        _ = _legacyRestorer.RestoreAllAsync(dataDir);
+
         _sessionManager.PlaybackStart += OnPlaybackStart;
         _sessionManager.PlaybackProgress += OnPlaybackProgress;
         _sessionManager.PlaybackStopped += OnPlaybackStopped;
 
-        _maintenanceTimer = new Timer(
-            OnMaintenance,
+        _sweepTimer = new Timer(
+            OnSweep,
             null,
-            TimeSpan.FromSeconds(15),
-            TimeSpan.FromSeconds(15));
+            TimeSpan.FromSeconds(SweepSeconds),
+            TimeSpan.FromSeconds(SweepSeconds));
 
         _logger.LogInformation("KidsLimit tracker started.");
         return Task.CompletedTask;
@@ -98,8 +129,8 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
         _sessionManager.PlaybackProgress -= OnPlaybackProgress;
         _sessionManager.PlaybackStopped -= OnPlaybackStopped;
 
-        _maintenanceTimer?.Dispose();
-        _maintenanceTimer = null;
+        _sweepTimer?.Dispose();
+        _sweepTimer = null;
 
         _store.FlushDebounced(force: true);
         _logger.LogInformation("KidsLimit tracker stopped.");
@@ -107,31 +138,75 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
     }
 
     /// <inheritdoc />
-    public void Dispose() => _maintenanceTimer?.Dispose();
+    public void Dispose() => _sweepTimer?.Dispose();
 
-    private void OnMaintenance(object? state)
+    /// <summary>
+    /// Runs the enforcement pass for one user's live sessions immediately, instead of
+    /// waiting up to <see cref="SweepSeconds"/> for the next sweep. Called by the parent
+    /// "Stop now" endpoint so the whole thing — message, grace, stop — starts the instant
+    /// the parent taps, while keeping a single enforcement code path.
+    /// </summary>
+    /// <param name="userId">The user whose sessions to act on.</param>
+    /// <returns>How many playing sessions were examined.</returns>
+    public int EnforceUserNow(Guid userId)
+    {
+        var count = 0;
+        foreach (var session in _sessionManager.Sessions)
+        {
+            if (session?.NowPlayingItem is null || session.UserId != userId)
+            {
+                continue;
+            }
+
+            count++;
+            ProcessSession(session, session.PlayState?.IsPaused ?? false, isStop: false);
+        }
+
+        return count;
+    }
+
+    /// <summary>
+    /// Substitutes the placeholders a parent may use in a configured message, and falls
+    /// back to the shipped default when the field has been blanked out — an empty message
+    /// would otherwise mean the child's TV stops with no explanation at all.
+    /// </summary>
+    private static string Format(string? configured, string fallback, string kidName, int minutes)
+    {
+        var text = string.IsNullOrWhiteSpace(configured) ? fallback : configured;
+        return text
+            .Replace("{minutes}", minutes.ToString(System.Globalization.CultureInfo.CurrentCulture), StringComparison.Ordinal)
+            .Replace("{name}", kidName, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// How long to leave a message up before actually stopping. Only the first stop of a
+    /// sitting earns the full reading pause: a child who presses play again has already
+    /// been told, and a full grace on every attempt would hand out watch time for doing it.
+    /// </summary>
+    private static int GraceFor(PluginConfiguration config, StopReason reason)
+    {
+        var grace = Math.Clamp(config.StopGraceSeconds, 0, 60);
+        return reason == StopReason.AlreadyOver ? Math.Min(2, grace) : grace;
+    }
+
+    private void OnSweep(object? state)
     {
         try
         {
+            // Actively sweep live playback so enforcement does not depend on clients
+            // faithfully emitting PlaybackProgress. A client that goes quiet after being
+            // told to stop must still be credited and told again.
+            SweepActiveSessions();
+
+            if (++_sweepCount % MaintenanceEverySweeps != 0)
+            {
+                return;
+            }
+
             var local = DateTime.Now;
             _store.RolloverAll(LimitCalculator.DateKey(local));
             _store.PruneIdleSessions(DateTime.UtcNow.AddHours(-6));
-
-            // Actively sweep live playback so enforcement (crediting time + re-sending
-            // Stop to over-limit sessions) does not depend on clients faithfully emitting
-            // PlaybackProgress events. Some clients go quiet after ignoring a Stop, which
-            // otherwise leaves them "blocked" on the dashboard yet still playing.
-            SweepActiveSessions();
-
             _store.FlushDebounced(force: true);
-
-            // Hard enforcement (opt-in): reconcile native access schedules so over-limit
-            // kids are blocked server-side even on clients that ignore Stop (Android TV).
-            var config = Plugin.Instance?.Configuration;
-            if (config is not null)
-            {
-                _ = _enforcer.ReconcileAsync(config, LimitCalculator.DateKey(local), local);
-            }
         }
         catch (Exception ex)
         {
@@ -251,6 +326,23 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
                     return;
                 }
 
+                // A parent's "Stop now" is enforced right here rather than by touching the
+                // account. It outranks any remaining budget, and because it lives in the
+                // day's state it survives a restart and keeps biting every time the child
+                // presses play — until the parent calls /allow or grants bonus, or midnight.
+                //
+                // Checked ahead of the paused guard on purpose: a paused session is still a
+                // TV sitting there with a frozen frame on it, and a parent who taps Stop
+                // means that one too.
+                if (dailyState.ManuallyStopped)
+                {
+                    decision.NewlyBlocked = !ss.Blocked;
+                    ss.Blocked = true;
+                    decision.Reason = StopReason.ParentStop;
+                    MarkMessage(ss, nowUtc, GraceFor(config, StopReason.ParentStop), ref decision);
+                    return;
+                }
+
                 if (isPaused)
                 {
                     return; // Paused time doesn't count and doesn't trigger enforcement.
@@ -266,11 +358,18 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
                 {
                     decision.NewlyBlocked = !ss.Blocked;
                     ss.Blocked = true;
-                    decision.Stop = true; // Re-send every tick for robustness against clients that ignore it.
+
+                    // "Time's up" the first time we stop this sitting; "TV is sleeping"
+                    // every time afterwards, because by then the child is pressing play on
+                    // a limit they have already been told about and needs a different
+                    // sentence — not the same one again.
+                    decision.Reason = decision.NewlyBlocked ? StopReason.LimitReached : StopReason.AlreadyOver;
+                    MarkMessage(ss, nowUtc, GraceFor(config, decision.Reason), ref decision);
 
                     // Watchdog: time still accruing (delta > 0) means the client is playing
                     // on despite the Stop. After the configured grace, alert the parent that
-                    // auto-stop appears to have failed — once per sitting.
+                    // auto-stop appears to have failed — once per sitting. With the policy
+                    // fallback gone this alert is the only backstop there is.
                     if (delta > 0)
                     {
                         ss.OverLimitSinceUtc ??= nowUtc;
@@ -287,12 +386,23 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
                 }
                 else
                 {
-                    // Back under limit (e.g. bonus granted) — re-arm the watchdog.
+                    // Back under limit (e.g. bonus granted) — re-arm the watchdog and the
+                    // block flag, so the next stop is a fresh "time's up" rather than the
+                    // terser repeat message.
                     ss.OverLimitSinceUtc = null;
                     ss.OverLimitAlerted = false;
+                    ss.Blocked = false;
+                    ss.StopAfterUtc = null;
 
-                    if (!ss.Warned &&
-                        remaining.RemainingSeconds <= (long)userCfg.WarnMinutesBeforeLimit * 60)
+                    var warnAt = (long)userCfg.WarnMinutesBeforeLimit * 60;
+                    if (remaining.RemainingSeconds > warnAt)
+                    {
+                        // Comfortably clear of the threshold again — usually because a
+                        // parent granted bonus. Re-arm, so the extra time gets its own
+                        // countdown instead of running out with no warning at all.
+                        ss.Warned = false;
+                    }
+                    else if (!ss.Warned)
                     {
                         ss.Warned = true;
                         decision.Warn = true;
@@ -303,46 +413,45 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
 
             _store.FlushDebounced();
 
+            var kidName = string.IsNullOrWhiteSpace(session.UserName)
+                ? (string.IsNullOrWhiteSpace(userCfg.UserName) ? userId : userCfg.UserName)
+                : session.UserName;
+
             if (decision.Stop)
             {
                 if (decision.NewlyBlocked)
                 {
-                    // Log the client's advertised control capabilities so it's obvious from
-                    // the server log whether the TV even claims to accept remote Stop. The
-                    // Jellyfin Android TV client is known to report these as false (see
-                    // REQUIREMENTS.md §2.1) and to ignore server-sent commands.
                     _logger.LogInformation(
-                        "KidsLimit: user {User} is over limit on session {Session} " +
-                        "(client='{Client}', device='{Device}', supportsRemoteControl={RemoteControl}, " +
-                        "supportsMediaControl={MediaControl}); sending Stop.",
-                        userId,
+                        "KidsLimit: stopping {User} on session {Session} ({Reason}) — " +
+                        "client='{Client}', device='{Device}', supportsRemoteControl={RemoteControl}.",
+                        kidName,
                         sessionId,
+                        decision.Reason,
                         session.Client,
                         session.DeviceName,
-                        session.SupportsRemoteControl,
-                        session.Capabilities?.SupportsMediaControl);
-
-                    // Apply the hard block right away instead of waiting up to 15 s for the
-                    // next maintenance tick — on clients that ignore Stop, the block is the
-                    // only thing that actually ends playback.
-                    _ = _enforcer.ReconcileAsync(config, today, localNow);
+                        session.SupportsRemoteControl);
                 }
 
-                _ = SendStopAsync(session);
+                _ = AnnounceThenStopAsync(session, config, decision, kidName);
             }
             else if (decision.Warn)
             {
-                _ = SendWarnAsync(sessionId, userCfg.WarnMinutesBeforeLimit);
+                // Round the real remaining time up rather than quoting the configured lead:
+                // the warning fires on the first tick at or below the threshold, so "10
+                // minutes" would be a small lie and a child counts.
+                var minutesLeft = Math.Max(1, (int)Math.Ceiling(decision.RemainingSeconds / 60d));
+                _ = SendMessageAsync(
+                    session.Id,
+                    config,
+                    Format(config.WarnMessageHeader, PluginConfiguration.DefaultWarnHeader, kidName, minutesLeft),
+                    Format(config.WarnMessageText, PluginConfiguration.DefaultWarnText, kidName, minutesLeft));
             }
 
             if (decision.AlertOverLimit)
             {
-                var kidName = string.IsNullOrWhiteSpace(session.UserName)
-                    ? (string.IsNullOrWhiteSpace(userCfg.UserName) ? userId : userCfg.UserName)
-                    : session.UserName;
                 _logger.LogWarning(
                     "KidsLimit: {User} still playing {Minutes} min after their limit on " +
-                    "'{Device}' ({Client}) — auto-stop appears to have failed; notifying parent.",
+                    "'{Device}' ({Client}) — the Stop command is being ignored; notifying parent.",
                     kidName,
                     decision.OverLimitMinutes,
                     session.DeviceName,
@@ -351,10 +460,8 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
                     config,
                     "⚠️ Auto-stop failed?",
                     $"{kidName} is still watching {decision.OverLimitMinutes} min after the limit " +
-                    $"on {session.DeviceName} ({session.Client}). The Stop command seems to be ignored." +
-                    (config.EnforceViaAccessSchedule
-                        ? string.Empty
-                        : " Consider enabling hard enforcement in settings, or use Stop now on the parent page."));
+                    $"on {session.DeviceName} ({session.Client}). The Stop command seems to be " +
+                    "ignored by this client — you may need to stop the TV by hand.");
             }
         }
         catch (Exception ex)
@@ -363,33 +470,98 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
         }
     }
 
-    private async Task SendStopAsync(SessionInfo session)
+    /// <summary>
+    /// Decides whether this tick should put a message on screen, and whether it may stop.
+    ///
+    /// <para>
+    /// Two rate limits, for two different reasons. The <b>message</b> is throttled so a
+    /// child leaning on the play button doesn't produce a flashing wall of banners — the
+    /// first stop of a sitting always speaks, repeats wait out
+    /// <see cref="BlockedMessageCooldownSeconds"/>.
+    /// </para>
+    ///
+    /// <para>
+    /// The <b>stop</b> is held off until the announced grace has elapsed. Without this the
+    /// sweep would race its own message: an announcing tick starts a 6 s reading pause, the
+    /// next sweep fires 5 s later, sees "blocked, not announcing" and stops instantly —
+    /// cutting the message off before it can be read, which is the exact failure this whole
+    /// sequence exists to fix. The grace is short and bounded, so the watch time it costs
+    /// is negligible; a repeat attempt gets a much shorter one anyway.
+    /// </para>
+    /// </summary>
+    private static void MarkMessage(SessionState ss, DateTime nowUtc, int graceSeconds, ref Decision decision)
     {
-        // Stop/Pause commands plus server-side stream teardown (transcode kill / live
-        // stream close) so playback ends even on clients that ignore the commands.
-        await _terminator.StopSessionAsync(session).ConfigureAwait(false);
+        var mayAnnounce = decision.NewlyBlocked ||
+            ss.LastBlockMessageUtc is null ||
+            (nowUtc - ss.LastBlockMessageUtc.Value).TotalSeconds >= BlockedMessageCooldownSeconds;
 
-        // Best-effort on-screen notice for clients that render it (web/mobile).
+        if (mayAnnounce)
+        {
+            ss.LastBlockMessageUtc = nowUtc;
+            ss.StopAfterUtc = graceSeconds > 0 ? nowUtc.AddSeconds(graceSeconds) : null;
+            decision.Announce = true;
+            decision.GraceSeconds = graceSeconds;
+            decision.Stop = true;
+            return;
+        }
+
+        // A stop is already scheduled behind a message that is still on screen — leave it
+        // to the task that owns it.
+        decision.Stop = ss.StopAfterUtc is null || nowUtc >= ss.StopAfterUtc.Value;
+    }
+
+    /// <summary>
+    /// Tells the child why, then stops the stream.
+    /// <para>
+    /// The order is the whole point and it is the opposite of what this did before. The
+    /// client only renders a DisplayMessage <b>while something is playing</b>, so a message
+    /// sent after the Stop lands on a dead player and is never seen — which is exactly what
+    /// used to happen, and why the TV appeared to just switch itself off for no reason.
+    /// Message first, a few seconds to read it, then stop.
+    /// </para>
+    /// </summary>
+    private async Task AnnounceThenStopAsync(
+        SessionInfo session,
+        PluginConfiguration config,
+        Decision decision,
+        string kidName)
+    {
         try
         {
-            await _sessionManager.SendMessageCommand(
-                null,
-                session.Id,
-                new MessageCommand
+            if (decision.Announce)
+            {
+                var (header, text) = decision.Reason switch
                 {
-                    Header = "Time's up",
-                    Text = "Watch-time limit reached. Ask a parent for bonus time to keep watching.",
-                    TimeoutMs = 8000,
-                },
-                CancellationToken.None).ConfigureAwait(false);
+                    StopReason.ParentStop => (
+                        Format(config.ParentStopMessageHeader, PluginConfiguration.DefaultParentStopHeader, kidName, 0),
+                        Format(config.ParentStopMessageText, PluginConfiguration.DefaultParentStopText, kidName, 0)),
+                    StopReason.AlreadyOver => (
+                        Format(config.BlockedMessageHeader, PluginConfiguration.DefaultBlockedHeader, kidName, 0),
+                        Format(config.BlockedMessageText, PluginConfiguration.DefaultBlockedText, kidName, 0)),
+                    _ => (
+                        Format(config.LimitMessageHeader, PluginConfiguration.DefaultLimitHeader, kidName, 0),
+                        Format(config.LimitMessageText, PluginConfiguration.DefaultLimitText, kidName, 0)),
+                };
+
+                await SendMessageAsync(session.Id, config, header, text).ConfigureAwait(false);
+
+                if (decision.GraceSeconds > 0)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(decision.GraceSeconds)).ConfigureAwait(false);
+                }
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "KidsLimit: DisplayMessage to session {SessionId} failed.", session.Id);
+            _logger.LogDebug(ex, "KidsLimit: announcing the stop to session {SessionId} failed.", session.Id);
         }
+
+        // Stop regardless of whether the message got through: the message is a courtesy,
+        // the stop is the requirement.
+        await _terminator.StopSessionAsync(session).ConfigureAwait(false);
     }
 
-    private async Task SendWarnAsync(string sessionId, int minutesLeft)
+    private async Task SendMessageAsync(string sessionId, PluginConfiguration config, string header, string text)
     {
         try
         {
@@ -398,22 +570,38 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
                 sessionId,
                 new MessageCommand
                 {
-                    Header = "Almost done",
-                    Text = $"About {minutesLeft} minutes of watch time left today.",
-                    TimeoutMs = 8000,
+                    Header = header,
+                    Text = text,
+                    TimeoutMs = Math.Clamp(config.MessageSeconds, 1, 60) * 1000L,
                 },
                 CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "KidsLimit failed sending warning to session {SessionId}.", sessionId);
+            _logger.LogDebug(ex, "KidsLimit: DisplayMessage to session {SessionId} failed.", sessionId);
         }
+    }
+
+    /// <summary>Why a session is being stopped — selects which message the child sees.</summary>
+    private enum StopReason
+    {
+        /// <summary>The daily/window/session budget just ran out.</summary>
+        LimitReached,
+
+        /// <summary>They were already out of time and pressed play again.</summary>
+        AlreadyOver,
+
+        /// <summary>A parent pressed "Stop now".</summary>
+        ParentStop,
     }
 
     private struct Decision
     {
         public bool Stop;
         public bool NewlyBlocked;
+        public bool Announce;
+        public int GraceSeconds;
+        public StopReason Reason;
         public bool Warn;
         public long RemainingSeconds;
         public bool AlertOverLimit;

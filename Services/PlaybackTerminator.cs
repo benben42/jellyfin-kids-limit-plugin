@@ -13,8 +13,8 @@ namespace Jellyfin.Plugin.KidsLimit.Services;
 /// Stops playback on a session using every server-side lever available, in escalating
 /// order of forcefulness:
 ///
-/// 1. Stop playstate command — the polite ask; honored by web/mobile, ignored by the
-///    Android TV client (REQUIREMENTS.md §2.1).
+/// 1. Stop playstate command — the polite ask, and as of the Jellyfin 12 Android TV
+///    client the one that actually does the work (REQUIREMENTS.md §2.1).
 /// 2. Pause playstate command — some clients honor Pause even when they ignore Stop.
 /// 3. Kill the session's transcoding job — when the stream is transcoded or remuxed
 ///    (HLS), the server simply stops producing segments, so playback stalls and stops
@@ -22,10 +22,12 @@ namespace Jellyfin.Plugin.KidsLimit.Services;
 ///    at all. This is what makes over-limit playback end without a player restart.
 /// 4. Close any live stream the session holds open.
 ///
-/// Direct-played static files are the one case the server cannot interrupt mid-stream:
-/// the client may already have buffered (or keep range-requesting) the file, and only a
-/// policy-level block (see <see cref="HardBlockEnforcer"/>) invalidates its next
-/// request.
+/// Direct-played static files are the one case the server cannot interrupt mid-stream
+/// on its own: the client may already have buffered (or keep range-requesting) the file,
+/// so steps 3 and 4 do nothing and only the client's own cooperation with step 1 ends
+/// playback. That is a deliberate accepted risk — the plugin no longer carries a
+/// policy-level fallback, and <see cref="WatchTimeTracker"/>'s over-limit watchdog is
+/// what raises the alarm if a client ever stops cooperating again.
 /// </summary>
 public sealed class PlaybackTerminator
 {

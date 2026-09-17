@@ -105,44 +105,79 @@
                 </div>
 
                 <div class="verticalSection">
-                    <h3 class="sectionTitle">Hard enforcement</h3>
-                    <label class="checkboxContainer">
-                        <input is="emby-checkbox" type="checkbox" id="enforceViaAccessSchedule" />
-                        <span>Hard-block kids at the server when they go over their daily/window limit</span>
-                    </label>
-                    <div class="fieldDescription">
-                        Recommended if your client (e.g. Android TV) ignores the server's Stop command.
-                        When a kid is over limit, the plugin blocks that user at the server so playback
-                        stops even on stubborn clients, and restores access automatically when they're
-                        back under limit, granted bonus, or at midnight.
+                    <h3 class="sectionTitle">What the TV says</h3>
+                    <div class="fieldDescription" style="margin-bottom:1em;">
+                        These appear on the TV itself. The client only draws a message <em>while
+                        something is playing</em>, so the plugin shows the message first and stops a
+                        few seconds later — otherwise the screen would just go dark with no
+                        explanation. Emoji work, and carry the meaning for a child who can't read
+                        yet. <code>{minutes}</code> becomes the minutes left, <code>{name}</code>
+                        the kid's name.
                     </div>
-                    <div class="selectContainer" style="margin-top: 1em;">
-                        <label class="selectLabel" for="hardEnforcementMode">Hard-block mode</label>
-                        <select is="emby-select" id="hardEnforcementMode">
-                            <option value="AccessSchedule">Block all access (access schedule) — most forceful</option>
-                            <option value="DisablePlayback">Block playback only — kid can still browse</option>
-                        </select>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="warnMessageHeader">Warning — title</label>
+                        <input is="emby-input" type="text" id="warnMessageHeader" />
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="warnMessageText">Warning — text</label>
+                        <input is="emby-input" type="text" id="warnMessageText" />
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="limitMessageHeader">Time's up — title</label>
+                        <input is="emby-input" type="text" id="limitMessageHeader" />
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="limitMessageText">Time's up — text</label>
+                        <input is="emby-input" type="text" id="limitMessageText" />
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="blockedMessageHeader">Tried to start again — title</label>
+                        <input is="emby-input" type="text" id="blockedMessageHeader" />
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="blockedMessageText">Tried to start again — text</label>
+                        <input is="emby-input" type="text" id="blockedMessageText" />
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="parentStopMessageHeader">Parent pressed Stop now — title</label>
+                        <input is="emby-input" type="text" id="parentStopMessageHeader" />
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="parentStopMessageText">Parent pressed Stop now — text</label>
+                        <input is="emby-input" type="text" id="parentStopMessageText" />
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="messageSeconds">How long a message stays on screen (seconds)</label>
+                        <input is="emby-input" type="number" min="1" max="60" id="messageSeconds" />
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="stopGraceSeconds">Reading time before playback actually stops (seconds)</label>
+                        <input is="emby-input" type="number" min="0" max="60" id="stopGraceSeconds" />
+                    </div>
+                    <div class="fieldDescription">
+                        Set the reading time to 0 to stop instantly. Note this is watch time the kid
+                        still gets — a repeat attempt after they're already out of time always uses a
+                        much shorter pause, so pressing play over and over can't buy extra minutes.
                     </div>
                     <details class="kl-help fieldDescription">
-                        <summary>How the two modes differ, and when to turn this off</summary>
+                        <summary>How limits are enforced now</summary>
                         <p>
-                            <strong>Block all access</strong> flips the kid's native access schedule to "never
-                            allowed": every request is rejected, so even a stream that's already playing dies
-                            within seconds — but the kid is locked out of Jellyfin entirely (browsing too, and
-                            some clients drop to an error/login screen).
+                            The plugin stops the stream by asking the client to stop, and keeps asking
+                            on every check while the kid is over their limit. No Jellyfin account
+                            setting is ever changed: the kid can still browse, still log in, and simply
+                            can't play until they have time again.
                         </p>
                         <p>
-                            <strong>Block playback only</strong> is gentler: it turns off the user's
-                            media-playback permission, so nothing new can start (including auto-play of the
-                            next episode) and the kid can still browse with a friendly "playback not allowed"
-                            error — but a client that ignores the Stop command may finish the episode it is
-                            currently direct-playing. Transcoded streams are torn down server-side in both modes.
-                        </p>
-                        <p>
-                            Turn hard enforcement off (and Save) before uninstalling the plugin to release any
-                            active blocks. The dashboard's <strong>Stop now</strong> button always applies a hard
-                            block (until you press Allow again, grant bonus, or midnight), regardless of the
-                            checkbox above — using the mode chosen here.
+                            Earlier versions also blocked the account at the server, because the Android
+                            TV client used to ignore Stop. Bench-testing the Jellyfin 12 client showed it
+                            honors Stop, so that path was removed. The trade-off: if a future client
+                            update starts ignoring Stop again, there is no fallback — which is exactly
+                            what the over-limit alert below is for. Keep it switched on.
                         </p>
                     </details>
                 </div>
@@ -320,6 +355,19 @@
         var notifyTargets = [];
 
         var NOTIFY_TYPES = ['Ntfy', 'Pushover', 'Gotify', 'Discord', 'Slack', 'Telegram', 'Apprise', 'Webhook'];
+
+        // The on-screen messages, paired with the defaults from PluginConfiguration so a
+        // cleared box can be restored client-side instead of round-tripping an empty string.
+        var MESSAGE_FIELDS = [
+            { id: 'warnMessageHeader', key: 'WarnMessageHeader', def: '⏰ Almost done' },
+            { id: 'warnMessageText', key: 'WarnMessageText', def: '⏰ {minutes} more minutes of TV, then it\'s time to stop. 📺' },
+            { id: 'limitMessageHeader', key: 'LimitMessageHeader', def: '🛑 Time\'s up!' },
+            { id: 'limitMessageText', key: 'LimitMessageText', def: '📺💤 No more TV right now. 🪙 Do a chore to earn more time!' },
+            { id: 'blockedMessageHeader', key: 'BlockedMessageHeader', def: '🛑 TV is sleeping' },
+            { id: 'blockedMessageText', key: 'BlockedMessageText', def: '📺💤 Not now. 🪙 Earn coins with a chore, then you can watch!' },
+            { id: 'parentStopMessageHeader', key: 'ParentStopMessageHeader', def: '🛑 Stopped' },
+            { id: 'parentStopMessageText', key: 'ParentStopMessageText', def: '📺💤 A grown-up turned the TV off. 🤗' }
+        ];
 
         // Built-in chore art, loaded from GET /KidsLimit/clipart — the server lists only the
         // keys that actually have a file embedded, so art can be added by dropping a picture
@@ -862,9 +910,12 @@
                 page.querySelector('#eveningStart').value = minutesToTime(cfg.EveningStartMinutes || 1080);
                 page.querySelector('#bonusApiToken').value = cfg.BonusApiToken || '';
                 page.querySelector('#publicBaseUrl').value = cfg.PublicBaseUrl || '';
-                page.querySelector('#enforceViaAccessSchedule').checked = !!cfg.EnforceViaAccessSchedule;
-                page.querySelector('#hardEnforcementMode').value =
-                    cfg.HardEnforcementMode === 'DisablePlayback' ? 'DisablePlayback' : 'AccessSchedule';
+                MESSAGE_FIELDS.forEach(function (f) {
+                    page.querySelector('#' + f.id).value = cfg[f.key] == null ? f.def : cfg[f.key];
+                });
+                page.querySelector('#messageSeconds').value = cfg.MessageSeconds || 8;
+                page.querySelector('#stopGraceSeconds').value =
+                    cfg.StopGraceSeconds == null ? 6 : cfg.StopGraceSeconds;
                 page.querySelector('#overLimitAlertEnabled').checked = cfg.OverLimitAlertEnabled !== false;
                 page.querySelector('#overLimitAlertMinutes').value =
                     cfg.OverLimitAlertMinutes > 0 ? cfg.OverLimitAlertMinutes : 3;
@@ -899,8 +950,16 @@
                 cfg.EveningStartMinutes = timeToMinutes(page.querySelector('#eveningStart').value);
                 cfg.BonusApiToken = page.querySelector('#bonusApiToken').value.trim();
                 cfg.PublicBaseUrl = page.querySelector('#publicBaseUrl').value.trim();
-                cfg.EnforceViaAccessSchedule = page.querySelector('#enforceViaAccessSchedule').checked;
-                cfg.HardEnforcementMode = page.querySelector('#hardEnforcementMode').value;
+                // A blanked box means "restore the default", not "say nothing": a TV that
+                // stops with no message is the thing this whole feature exists to avoid.
+                MESSAGE_FIELDS.forEach(function (f) {
+                    var v = (page.querySelector('#' + f.id).value || '').trim();
+                    cfg[f.key] = v || f.def;
+                });
+                cfg.MessageSeconds = Math.min(60, Math.max(1,
+                    parseInt(page.querySelector('#messageSeconds').value, 10) || 8));
+                cfg.StopGraceSeconds = Math.min(60, Math.max(0,
+                    parseInt(page.querySelector('#stopGraceSeconds').value, 10) || 0));
                 cfg.OverLimitAlertEnabled = page.querySelector('#overLimitAlertEnabled').checked;
                 cfg.OverLimitAlertMinutes = parseInt(page.querySelector('#overLimitAlertMinutes').value, 10) || 3;
                 cfg.Presets = presets;

@@ -20,63 +20,71 @@ server keeps being offered.
 
 ---
 
-## ⚠️ Phase 0 — validate the load-bearing risk FIRST
+## Can the server actually stop your TV?
 
-Everything here depends on the server being able to **Stop playback on the
-household's Android TV**. That client has historically reported
-`SupportsRemoteControl=False` and swallowed `DisplayMessage` toasts. Before
-relying on this plugin, run the spike:
+Everything here depends on it, so it is worth knowing rather than assuming — and
+the answer is a property of your *client version*, which changes under you when
+the app updates.
 
-```bash
-export JELLYFIN_URL="http://your-server:8096"
-export JELLYFIN_TOKEN="<admin API key from Dashboard → API Keys>"
+**Measured 2026-09-17 on Jellyfin 12 + the 12-beta2 Android TV client: yes.**
+Stop, Pause and Seek are all honored, and on-screen messages render (emoji
+included). Full per-mechanism results are in `REQUIREMENTS.md` §2.1.
 
-# Start a video on the Android TV, then:
-./spike/stop-test.sh list                 # find its session Id
-./spike/stop-test.sh stop <sessionId>     # does the TV actually stop?
-./spike/stop-test.sh pause <sessionId>    # does Pause work?
-./spike/stop-test.sh message <sessionId>  # does a toast appear?
+To check it for yourself — after a client update, or on different hardware —
+open the **stop-method test bench** on a phone while standing at the TV:
+
+```
+/KidsLimit/test?token=<parent token>
 ```
 
-- **Stop works** → you're good; the plugin's monitor→kill model works.
-- **Stop does NOT work** → the polite command can't reach the primary client
-  (see `REQUIREMENTS.md` §2.1 / §12). Use **Hard enforcement** (below) instead.
+It fires one mechanism at a time (message, Stop, Stop ×5, Pause, Seek-to-end,
+GoHome, Back, kill transcode, close live stream, end session, log the device
+out) and reports per step whether the server accepted it, so a command that was
+*rejected* is distinguishable from one that was accepted and *ignored*. The
+panel at the top matters as much as the buttons: if **Play method** reads
+`DirectPlay`, no server-side stream teardown can touch what is already playing.
 
-The plugin also re-sends Stop on every progress tick (~10 s) while over limit, so
-a client that ignores a single Stop still gets stopped repeatedly. In addition,
-whenever a session is over limit (or a parent presses **Stop now**) the plugin
-**tears the stream down server-side**: the session's transcoding job is killed
-and any live stream is closed, so transcoded/remuxed (HLS) playback stalls and
-stops within seconds even on clients that ignore every command — no player
-restart needed. The one case the server cannot interrupt mid-stream is a
-**direct-played** static file on a client that ignores Stop; that's what hard
-enforcement is for.
+There is also `spike/stop-test.sh` for a quick shell-only check.
 
-### Hard enforcement (for clients that ignore Stop, e.g. Android TV)
+The plugin re-sends Stop every five seconds while a kid is over limit, and also
+tears the stream down server-side where it can — the session's transcoding job
+is killed and any live stream closed, so transcoded/remuxed (HLS) playback
+stalls within seconds even on an uncooperative client. The one case the server
+cannot interrupt mid-stream is a **direct-played** static file on a client that
+ignores Stop — see the trade-off below.
 
-If your TV swallows the Stop command, enable **Hard-block kids at the server**
-in plugin settings (off by default). When a kid is over their **daily or
-window** limit, the plugin blocks that user at the server, in one of two
-selectable modes:
+### How a limit is enforced
 
-- **Block all access (access schedule)** — flips the user's native Jellyfin
-  access schedule to "never allowed". Jellyfin validates the schedule on every
-  request, so even an already-running stream dies at its next range/segment
-  request. Most forceful, but while blocked the kid is locked out of Jellyfin
-  entirely (browsing too, and some clients drop to an error/login screen).
-- **Block playback only** — turns off the user's *media playback* permission
-  instead. Nothing new can start (including auto-play of the next episode) and
-  the kid can still browse the library, getting a normal "playback not allowed"
-  error when they press play. Gentler, but a client that ignores Stop may finish
-  the item it is currently direct-playing before the block bites.
+When a kid runs out of time the plugin puts a message on the TV, waits a few
+seconds so it can be read, then tells the client to stop — and keeps telling it,
+every five seconds, for as long as they are over. Nothing about the Jellyfin
+account is changed: the kid can still log in, still browse, and simply cannot
+play until they have time again. Pressing play again gets them stopped again,
+with a different message.
 
-The block is applied immediately when a limit is crossed (not just on the next
-maintenance tick), and is released automatically when the kid is back under
-limit, is granted bonus, or at local midnight. Whatever the plugin changes
-(schedules and/or the playback permission) is saved first and restored verbatim
-on release. **Turn the option off and Save before uninstalling the plugin** so
-no kid is left locked out. The dashboard's **Stop now** button always applies a
-hard block using the selected mode, regardless of the on/off setting.
+Earlier versions also blocked the account at the server (access schedule /
+playback permission), because the Android TV client used to ignore Stop. Bench
+testing against the Jellyfin 12 client showed it honors Stop, Pause and Seek, so
+that path was removed in 3.1 — see REQUIREMENTS.md §2.1 for the full results. If
+you are upgrading from 3.0 or earlier while a block is active, the plugin
+restores the original policy automatically on first start.
+
+**The trade-off, stated plainly:** a **direct-played** file is the one stream the
+server cannot interrupt on its own, so if a future client update starts ignoring
+Stop again there is no fallback. Keep the **over-limit alert** switched on — it
+is the only thing that will tell you.
+
+### What the TV says
+
+The client renders messages (emoji included) **only while something is playing**,
+which is why the plugin announces *before* stopping. Four moments get four
+messages — the near-limit warning, the limit being reached, a kid who is already
+out of time pressing play, and a parent's **Stop now** — and all of them are
+editable under *What the TV says* on either settings page. `{minutes}` and
+`{name}` are substituted.
+
+Repeat attempts get a shorter reading pause than the first stop, so pressing play
+over and over cannot buy extra minutes.
 
 ---
 
@@ -150,9 +158,10 @@ description, and target ABI used in the manifest.
   preset to each weekday, add date overrides (sick day / holiday), and set the
   warn-minutes threshold. Users left disabled are unlimited adults.
 - **Over-limit alert** — when a kid keeps actively playing more than N minutes
-  (default 3) past their limit — i.e. the automatic stop failed, e.g. a client
-  that ignores the Stop command with hard enforcement off — a push notification
-  is sent to the configured notification targets. One alert per sitting.
+  (default 3) past their limit — i.e. the Stop command is being ignored — a push
+  notification is sent to the configured notification targets. One alert per
+  sitting. With no server-side fallback left, this is the only backstop there is;
+  leave it on.
 
 Everything above can also be edited from the standalone parent page (below)
 under **⚙️ Settings** — no Jellyfin admin login needed, just the parent token.
@@ -168,11 +177,10 @@ directly:
 
 Per kid it shows today's used/remaining, current session, active preset,
 per-window usage, a 7-day average, and **+10 / +30 / +60 / custom bonus** and
-**Stop now** buttons. **Stop now** stops the kid's sessions (commands + server-
-side stream teardown) and applies a hard block using the configured hard-block
-mode, so playback stops even on clients that ignore the Stop command, and holds
-until you press **Allow again**, grant bonus, or local midnight — the card
-flips to an **Allow again** button while a kid is stopped.
+**Stop now** buttons. **Stop now** shows the kid a message, stops their
+sessions, and holds — every fresh press of play is stopped again — until you
+press **Allow again**, grant bonus, or local midnight. The card flips to an
+**Allow again** button while a kid is stopped. No account setting is touched.
 
 ### Direct access (no Plugins drill-down)
 
@@ -209,7 +217,7 @@ Auth is the shared token via `?token=` or the `X-KidsLimit-Token` header.
 | `POST` | `/KidsLimit/bonus?user=&minutes=&token=` | Add bonus to daily + session (+ active window) |
 | `GET`  | `/KidsLimit/status?token=` | Status for all enabled users |
 | `GET`  | `/KidsLimit/status/{user}?token=` | Status for one user |
-| `POST` | `/KidsLimit/stop?user=&token=` | Immediately stop a user and hard-block them for the rest of the day |
+| `POST` | `/KidsLimit/stop?user=&token=` | Stop a user now and keep them stopped for the rest of the day |
 | `POST` | `/KidsLimit/allow?user=&token=` | Lift a `stop` hold so the user can play again (no extra time granted) |
 | `GET`  | `/KidsLimit/history/{user}?days=&token=` | Finished-day rollups (averages/history) |
 | `GET`  | `/KidsLimit/wallet/{user}?token=` | Coin balance, pending claims, recent ledger |
