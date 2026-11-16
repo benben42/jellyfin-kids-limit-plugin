@@ -7,9 +7,7 @@
 <style>
     /* Kid TV page (REWARDS.md): picture-only UI for a non-reading child driving an
        Android TV remote. Everything is big tiles, emoji, counts and sounds. The D-pad
-       arrives as arrow-key events in the WebView; focus is a huge glowing ring.
-       The watch grid is the child's OWN accessible Jellyfin library as posters, so it
-       never looks like "only these few shows" — she just taps a picture she knows. */
+       arrives as arrow-key events in the WebView; focus is a huge glowing ring. */
     :root {
         --bg1: #1b1140;
         --bg2: #0d1030;
@@ -47,8 +45,8 @@
     }
 
     /* -------- header: name + today's allowance + coin jar -------- */
-    /* Sticky: a D-pad has no "jump to top" gesture, so once the child scrolls deep
-       into the poster grid the coin counts would be unreachable — keep them pinned. */
+    /* Sticky: a D-pad has no "jump to top" gesture, so once the child scrolls down a
+       long chore list the coin counts would be unreachable — keep them pinned. */
     .header {
         display: flex; align-items: center; justify-content: space-between;
         min-height: 11vh; gap: 2vw;
@@ -96,7 +94,7 @@
     #jar.todayEmpty #todayCount { color: rgba(255,255,255,.45); }
 
     /* TV-time meter: her plain daily minutes. Deliberately NOT coins — this time drains on
-       its own and can't be banked or spent on posters, so it reads as a battery, not money. */
+       its own and can't be banked, so it reads as a battery, not money. */
     #tvTime { border: .5vh solid rgba(255, 255, 255, .18); }
     #tvTime .tv { font-size: 3.4vh; }
     #tvTime .meter {
@@ -147,9 +145,17 @@
     .rowTitle .pill.earn { background: rgba(88, 224, 139, .16); color: #b9f5cf; }
     .rowTitle .pill.spend { background: rgba(255, 210, 74, .14); color: #ffe9ac; }
     .grid { display: flex; flex-wrap: wrap; gap: var(--grid-gap); align-items: flex-start; }
+    /* Landscape (the TV): chores take the width that is left, the spend column keeps its
+       own and stays pinned under the header while a long chore list scrolls past it. */
+    .main { display: flex; align-items: flex-start; gap: 4vh; }
+    .main > .earnSection { flex: 1 1 auto; min-width: 0; }
+    .main > .spendSection { flex: 0 0 auto; position: sticky; top: 17vh; }
 
     .tile {
         position: relative; outline: none; cursor: pointer;
+        /* A focused tile grows and lifts, so "just inside the viewport" clips its ring and
+           badge. Leave room around whatever focus scrolls into view. */
+        scroll-margin: 4vh 0 5vh;
         border: .55vh solid transparent; border-radius: 2.6vh;
         transition: transform .14s ease, border-color .14s ease, box-shadow .14s ease, filter .14s ease;
         display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -210,7 +216,7 @@
         filter: drop-shadow(0 .06em .05em rgba(0,0,0,.35));
     }
 
-    /* square chore tiles. Spending tiles are all posters now, so this is the only square. */
+    /* square chore tiles */
     .chore {
         width: var(--tile); height: var(--tile); background: linear-gradient(150deg, var(--card2), var(--card));
         box-shadow: 0 1.2vh 3vh rgba(0,0,0,.3); gap: .6vh;
@@ -390,6 +396,9 @@
         }
         html { scroll-padding-top: clamp(110px, 32vw, 190px); }
         body { padding: 2vh 4vw 8vh; }
+        /* Portrait has no width for two columns: stack, earning first. */
+        .main { display: block; }
+        .main > .spendSection { position: static; }
 
         /* header wraps to two rows (name / wallet) — re-match the sticky bleed to the
            portrait body padding */
@@ -477,6 +486,11 @@
     <!-- Picture language for a non-reader: green sections/badges GIVE coins
          (coin flies INTO the piggy), gold sections/badges COST coins (piggy
          pays a coin OUT). The pills draw that as a tiny coin-flow diagram. -->
+    <!-- Chores on the left, the one spend control on the right, directly under the piggy
+         and TV chips it trades between. Side by side so nothing she needs is ever below
+         the fold: with the two stacked, nine chores pushed the spend tile off the bottom
+         of a 16:9 screen, and "more telly" was a tile she had to scroll to find. -->
+    <div class="main">
     <div id="choreSection" class="section earnSection hidden">
         <div class="rowTitle">🧹✨ <span class="pill earn">+&nbsp;<span class="coin"></span> ➜ 🐷</span></div>
         <div id="chores" class="grid"></div>
@@ -485,7 +499,7 @@
     <!-- One spend control for the whole page: put a coin in the telly. What it costs is
          not written on it, because the amount is not decided here — she picks that on the
          clock, where it is a shape rather than a price. -->
-    <div class="section">
+    <div class="section spendSection">
         <div class="rowTitle">⏱️ <span class="pill spend">🐷 ➜ <span class="coin"></span> ➜ 📺</span></div>
         <div class="grid">
             <div class="tile" id="spendTile" tabindex="0" data-kind="spend" data-blocked="0">
@@ -515,6 +529,8 @@
             </div>
         </div>
     </div>
+
+    </div><!-- /main -->
 
     <div id="overlay">
         <div id="overlayCard">
@@ -721,7 +737,7 @@
         el.appendChild(document.createTextNode(name));
     }
 
-    // Why posters are locked right now: 'coins' = jar is empty (go do chores),
+    // Why the spend tile is locked right now: 'coins' = jar is empty (go do chores),
     // 'moon' = coins saved but today's spend allowance is used up (tomorrow!).
     function lockReason() {
         if (redeemable() > 0) { return null; }

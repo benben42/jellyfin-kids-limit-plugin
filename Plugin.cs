@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Security.Cryptography;
 using Jellyfin.Plugin.KidsLimit.Configuration;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Plugins;
@@ -26,6 +27,9 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         Instance = this;
         MigrateConfiguration();
     }
+
+    // The default warning body shipped up to 3.0.x; see MigrateConfiguration.
+    private const string LegacyWarnText = "⏰ {minutes} more minutes of TV, then it's time to stop. 📺";
 
     /// <summary>Gets the singleton instance.</summary>
     public static Plugin? Instance { get; private set; }
@@ -132,7 +136,27 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
                 config.Chores = PluginConfiguration.DefaultChores();
             }
 
+            // A fresh install gets a parent token straight away. Without one the whole
+            // parent API answers 401 — including for the admin dashboard, which reaches
+            // the plugin through it — so the very first thing a new parent saw was an
+            // empty page telling them to go and generate a secret. Only ever done here,
+            // on first run: on an existing install a blank token is a choice ("API off").
+            if (string.IsNullOrEmpty(config.BonusApiToken))
+            {
+                config.BonusApiToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(16))
+                    .ToLower(CultureInfo.InvariantCulture);
+            }
+
             config.Initialized = true;
+            changed = true;
+        }
+
+        // The shipped warning used to read "{minutes} more minutes", which the TV rendered
+        // as "1 more minutes" on the last one. Swap it for the wording that survives any
+        // number — but only where the parent never changed it.
+        if (string.Equals(config.WarnMessageText, LegacyWarnText, StringComparison.Ordinal))
+        {
+            config.WarnMessageText = PluginConfiguration.DefaultWarnText;
             changed = true;
         }
 

@@ -15,7 +15,7 @@ public class PluginConfiguration : BasePluginConfiguration
     public const string DefaultWarnHeader = "⏰ Almost done";
 
     /// <summary>Default body for the warning. <c>{minutes}</c> is substituted.</summary>
-    public const string DefaultWarnText = "⏰ {minutes} more minutes of TV, then it's time to stop. 📺";
+    public const string DefaultWarnText = "⏰ {minutes} min of TV left, then it's time to stop. 📺";
 
     /// <summary>Default header shown as the daily limit is reached.</summary>
     public const string DefaultLimitHeader = "🛑 Time's up!";

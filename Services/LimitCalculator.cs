@@ -12,6 +12,46 @@ namespace Jellyfin.Plugin.KidsLimit.Services;
 /// </summary>
 public static class LimitCalculator
 {
+    /// <summary>
+    /// How long a break ends a "sitting". The session cap counts playing time across
+    /// everything watched in one sitting — several episodes in a row are one sitting —
+    /// and a break at least this long starts a fresh one.
+    /// </summary>
+    public const int SittingGapMinutes = 30;
+
+    /// <summary>
+    /// Whether a tracked session still belongs to the current sitting, i.e. it was
+    /// watched within the last <see cref="SittingGapMinutes"/>.
+    /// </summary>
+    /// <param name="session">The tracked session.</param>
+    /// <param name="nowUtc">The current UTC time.</param>
+    /// <returns>True when the session's counter still applies.</returns>
+    public static bool InCurrentSitting(SessionState session, DateTime nowUtc) =>
+        (nowUtc - (session.LastPlayedUtc ?? session.LastTickUtc)).TotalMinutes <= SittingGapMinutes;
+
+    /// <summary>
+    /// Seconds watched in the current sitting: the busiest tracked session that has not
+    /// been idle long enough to start a fresh one. This is what the status endpoints feed
+    /// to <see cref="Compute"/>, so the parent and kid pages show the same session budget
+    /// the tracker will enforce on the next play.
+    /// </summary>
+    /// <param name="state">The user's daily state.</param>
+    /// <param name="nowUtc">The current UTC time.</param>
+    /// <returns>The current sitting's seconds, 0 when there is none.</returns>
+    public static long SittingSeconds(DailyState state, DateTime nowUtc)
+    {
+        long best = 0;
+        foreach (var session in state.ActiveSessions.Values)
+        {
+            if (InCurrentSitting(session, nowUtc))
+            {
+                best = Math.Max(best, session.SecondsWatched);
+            }
+        }
+
+        return best;
+    }
+
     /// <summary>Determines the window for a local time-of-day.</summary>
     /// <param name="local">The server-local timestamp.</param>
     /// <param name="config">Plugin config (window cut-points).</param>

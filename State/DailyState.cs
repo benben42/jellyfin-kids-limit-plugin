@@ -141,7 +141,22 @@ public class SessionState
 
     /// <summary>
     /// Gets or sets the UTC timestamp of the last progress tick used to compute deltas.
-    /// Not persisted meaningfully across restarts (treated as "now" on first tick).
     /// </summary>
     public DateTime LastTickUtc { get; set; }
+
+    /// <summary>
+    /// Gets or sets when this session last accrued watch time it was entitled to. This —
+    /// not <see cref="LastTickUtc"/> — is what a "sitting" is measured from: a child who is
+    /// out of time and keeps pressing play produces ticks, and those must not keep pushing
+    /// back the break that would earn a fresh sitting. Null on state written by older
+    /// versions, where <see cref="LastTickUtc"/> stands in.
+    /// </summary>
+    public DateTime? LastPlayedUtc { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether playback on this session has ended. The
+    /// entry is deliberately kept after a stop (see the tracker), so the time between the
+    /// stop and the next play must not be credited as if it had been watched.
+    /// </summary>
+    public bool Stopped { get; set; }
 }

@@ -554,10 +554,7 @@ public class RewardsController : ControllerBase
         {
             var window = LimitCalculator.WindowFor(local, config);
             var daily = _store.GetOrCreate(userId, today);
-            var sessionSeconds = daily.ActiveSessions.Values
-                .Select(s => s.SecondsWatched)
-                .DefaultIfEmpty(0)
-                .Max();
+            var sessionSeconds = LimitCalculator.SittingSeconds(daily, DateTime.UtcNow);
             var remaining = LimitCalculator.Compute(preset, daily, window, sessionSeconds);
             if (remaining.HasLimit)
             {

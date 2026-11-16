@@ -18,7 +18,7 @@ remote (D-pad). Everything is pictures, emoji, counts and sounds.
 | **Claim** | Kid taps a chore on the TV page → a *pending claim*. Parent approves or rejects from the dashboard. Approval credits coins. |
 | **Earn (direct)** | Parent can credit coins directly from the dashboard (one tap per chore, or a custom amount) — no claim/approval round-trip. |
 | **Redeem** | Spending coins converts them into **today's** `DailyBonusSeconds` — the exact same mechanism as parent-granted bonus time, so `LimitCalculator`, the tracker and the hard-block enforcer are untouched. |
-| **Reference titles** | Parent-picked favourite movies/series. The kid page shows the balance and redemption *as those posters*: "Tom & Jerry ×3". Runtime and poster come from the Jellyfin library. |
+| **Reference titles** | Retired from the UI. The kid page once priced posters; it now sells plain minutes on the clock, so the picker was removed from both settings pages. `ReferenceItemIds` and the `items/*` and `kid/redeem` endpoints remain for direct API callers. |
 
 ## Rules
 
@@ -134,7 +134,7 @@ remote (D-pad). Everything is pictures, emoji, counts and sounds.
    or the admin dashboard's "📱 Phone page" button and bookmark it.
 3. **Plugin settings** — "Rewards" tab: coin value, bank cap, daily redeem cap,
    the spend clock's default amount, ntfy topic URL, chores editor,
-   reference-title picker (library search), and a per-kid token + ready-to-copy
+   and a per-kid token + ready-to-copy
    kid page URL.
 4. **Android TV app** — `android-tv/` contains a minimal sideloadable WebView
    wrapper (leanback launcher entry, fullscreen, keeps screen on) pointed at the

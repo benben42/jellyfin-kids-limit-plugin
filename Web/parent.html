@@ -276,18 +276,6 @@
                     “Starts on” is where the kid page's spend clock opens — at 3 coins × 5 minutes
                     she taps 👍 for 15 minutes and only uses ▲/▼ to ask for something else.</p>
             </div>
-            <div class="card">
-                <div class="groupTitle">Reference titles (kid page “watch” tiles)</div>
-                <p class="hint">The kid spends coins by picking a poster; the price comes from the
-                    item's runtime. Search your library to add titles.</p>
-                <div id="refTitles"></div>
-                <div class="row">
-                    <div class="field" style="flex:1 1 12em;"><label>Search movies &amp; series</label>
-                        <input type="text" id="refSearch" placeholder="e.g. Bluey" /></div>
-                    <button type="button" id="btnRefSearch">Search</button>
-                </div>
-                <div id="refResults"></div>
-            </div>
         </div>
 
         <div class="secPage" data-sec="notify" hidden>
@@ -408,7 +396,6 @@
     var sec = 'kids';
     var S = null;          // settings snapshot from GET /KidsLimit/settings
     var dirty = false;
-    var refResolved = {};  // itemId -> {Name, Type, RuntimeMinutes, CoinCost}
 
     var NOTIFY_TYPES = ['Ntfy', 'Pushover', 'Gotify', 'Discord', 'Slack', 'Telegram', 'Apprise', 'Webhook'];
     var WEEKDAYS = [
@@ -432,7 +419,7 @@
     // have to second-guess.
     var MESSAGE_FIELDS = [
         { id: 'setWarnHeader', key: 'WarnMessageHeader', def: '⏰ Almost done' },
-        { id: 'setWarnText', key: 'WarnMessageText', def: '⏰ {minutes} more minutes of TV, then it\'s time to stop. 📺' },
+        { id: 'setWarnText', key: 'WarnMessageText', def: '⏰ {minutes} min of TV left, then it\'s time to stop. 📺' },
         { id: 'setLimitHeader', key: 'LimitMessageHeader', def: '🛑 Time\'s up!' },
         { id: 'setLimitText', key: 'LimitMessageText', def: '📺💤 No more TV right now. 🪙 Do a chore to earn more time!' },
         { id: 'setBlockedHeader', key: 'BlockedMessageHeader', def: '🛑 TV is sleeping' },
@@ -528,6 +515,14 @@
     // bonusSec: bonus seconds that apply to THIS row (daily, or the active window).
     function barRow(label, used, cap, bonusSec) {
         bonusSec = bonusSec || 0;
+        // A scope with no cap has nothing to measure against: a full green bar reading
+        // "0m / ∞" for each of them was most of the card and said nothing. Only today's
+        // total is worth keeping when uncapped, as a plain figure.
+        if (cap === null || cap === undefined) {
+            return label === 'Today'
+                ? '<div class="barRow"><span class="lbl">Today</span><span class="sub">' + fmt(used) + ' watched · no daily cap</span></div>'
+                : '';
+        }
         var capLbl = capText(cap);
         if (bonusSec > 0 && cap !== null && cap !== undefined) {
             capLbl += ' <span class="bonusTag">+' + Math.round(bonusSec / 60) + 'b</span>';
@@ -851,6 +846,28 @@
                 markDirty();
             });
         });
+        // Switching limits on for a kid with nothing set up yet fills in a sensible start:
+        // school days Mon-Fri, weekend Sat-Sun, and a kid-page token. An enabled kid with no
+        // preset on a day is UNLIMITED that day, so seven empty dropdowns used to mean
+        // limits were "on" and limiting nothing. Only empty fields are touched.
+        container.querySelectorAll('.kidEnabled').forEach(function (box) {
+            box.addEventListener('change', function () {
+                if (!this.checked) { return; }
+                var body = this.closest('.sBody');
+                var selects = body.querySelectorAll('.wdSel');
+                var anySet = Array.prototype.some.call(selects, function (sel) { return !!sel.value; });
+                if (!anySet) {
+                    Array.prototype.forEach.call(selects, function (sel) {
+                        var key = sel.getAttribute('data-key');
+                        var want = (key === 'SaturdayPresetId' || key === 'SundayPresetId') ? 'weekend' : 'school-day';
+                        if (sel.querySelector('option[value="' + want + '"]')) { sel.value = want; }
+                    });
+                }
+                var tok = body.querySelector('.kidToken');
+                if (!tok.value.trim()) { tok.value = randHex(16); }
+                markDirty();
+            });
+        });
         container.querySelectorAll('.btnCopyKidUrl').forEach(function (btn) {
             btn.addEventListener('click', function () {
                 var tok = this.closest('.sBody').querySelector('.kidToken').value.trim();
@@ -1053,69 +1070,6 @@
         document.body.appendChild(back);
     }
 
-    // ------------------------------------------------- coins + reference titles
-
-    function refInfoText(id) {
-        var r = refResolved[norm(id)];
-        if (!r) { return id; }
-        return r.Name + ' (' + r.Type + ', ~' + r.RuntimeMinutes + 'm, 🪙' + r.CoinCost + ')';
-    }
-
-    function renderRefTitles() {
-        var html = '';
-        (S.ReferenceItemIds || []).forEach(function (id, i) {
-            html += '<div class="itemRow" style="margin-top:.4em;">' +
-                '<span class="grow">' + esc(refInfoText(id)) + '</span>' +
-                '<button type="button" class="no btnRmRef" data-idx="' + i + '">✗</button></div>';
-        });
-        var container = $('refTitles');
-        container.innerHTML = html || '<div class="hint">No reference titles yet — search below.</div>';
-        container.querySelectorAll('.btnRmRef').forEach(function (btn) {
-            btn.addEventListener('click', function () {
-                S.ReferenceItemIds.splice(parseInt(this.getAttribute('data-idx'), 10), 1);
-                renderRefTitles();
-                markDirty();
-            });
-        });
-    }
-
-    function resolveRefTitles() {
-        if (!S.ReferenceItemIds || !S.ReferenceItemIds.length) { return; }
-        api('items/resolve?ids=' + encodeURIComponent(S.ReferenceItemIds.join(','))).then(function (list) {
-            list.forEach(function (r) { refResolved[norm(r.ItemId)] = r; });
-            renderRefTitles();
-        }, function () {});
-    }
-
-    function searchRefTitles() {
-        var q = $('refSearch').value.trim();
-        var out = $('refResults');
-        if (!q) { return; }
-        out.innerHTML = '<div class="hint">Searching…</div>';
-        api('items/search?q=' + encodeURIComponent(q)).then(function (list) {
-            if (!list.length) { out.innerHTML = '<div class="hint">No matches.</div>'; return; }
-            out.innerHTML = list.map(function (r) {
-                refResolved[norm(r.ItemId)] = r;
-                var added = (S.ReferenceItemIds || []).some(function (id) { return norm(id) === norm(r.ItemId); });
-                return '<div class="itemRow" style="margin-top:.4em;">' +
-                    '<span class="grow">' + esc(refInfoText(r.ItemId)) + '</span>' +
-                    (added ? '<span class="hint">added</span>'
-                        : '<button type="button" class="ok btnAddRef" data-id="' + esc(r.ItemId) + '">＋ Add</button>') +
-                    '</div>';
-            }).join('');
-            out.querySelectorAll('.btnAddRef').forEach(function (btn) {
-                btn.addEventListener('click', function () {
-                    S.ReferenceItemIds.push(this.getAttribute('data-id'));
-                    renderRefTitles();
-                    searchRefTitles();
-                    markDirty();
-                });
-            });
-        }, function () {
-            out.innerHTML = '<div class="hint">Search failed.</div>';
-        });
-    }
-
     // ---------------------------------------------------- notification targets
 
     function renderTargets() {
@@ -1185,8 +1139,6 @@
         renderPresets();
         renderChores();
         renderTargets();
-        renderRefTitles();
-        resolveRefTitles();
         showSec(sec);
     }
 
@@ -1298,10 +1250,8 @@
         b.addEventListener('click', function () { showSec(this.getAttribute('data-sec')); });
     });
 
-    // Any edit inside the settings view marks the config dirty — except the library
-    // search box, which is not part of the config.
-    function onSettingsEdit(e) {
-        if (e && e.target && e.target.id === 'refSearch') { return; }
+    // Any edit inside the settings view marks the config dirty.
+    function onSettingsEdit() {
         markDirty();
     }
     $('viewSettings').addEventListener('input', onSettingsEdit);
@@ -1352,11 +1302,6 @@
             toast('Test sent: ' + r.Succeeded + '/' + r.Attempted + ' target(s) succeeded.' +
                 (r.Attempted === 0 ? ' No enabled targets saved yet.' : ''));
         }, function () { toast('Test failed.'); });
-    });
-
-    $('btnRefSearch').addEventListener('click', searchRefTitles);
-    $('refSearch').addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') { e.preventDefault(); searchRefTitles(); }
     });
 
     $('btnGenApiToken').addEventListener('click', function () {

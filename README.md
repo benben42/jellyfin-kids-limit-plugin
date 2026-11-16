@@ -148,7 +148,8 @@ description, and target ABI used in the manifest.
 
 - **Global windows** — the two cut-points that split each day into
   morning / afternoon / evening (defaults 12:00 and 18:00).
-- **Parent API token** — shared secret for the REST API (blank = API disabled).
+- **Parent API token** — shared secret for the REST API. Generated automatically on a
+  fresh install; blank = API (and both dashboards) disabled.
 - **Presets** — reusable named limit sets (daily / session / per-window caps;
   blank = unlimited). Ships with *School Day*, *Weekend*, *Holiday*,
   *Recovery Day*; each preset is a collapsible card (click to edit), and
@@ -156,7 +157,11 @@ description, and target ABI used in the manifest.
   creating duplicates.
 - **Per-user limits** — each kid is a collapsible card: enable them, assign a
   preset to each weekday, add date overrides (sick day / holiday), and set the
-  warn-minutes threshold. Users left disabled are unlimited adults.
+  warn-minutes threshold. Switching limits on for a kid with nothing set up fills in
+  School Day Mon–Fri, Weekend Sat–Sun and a kid-page token; a day with no preset is
+  unlimited. Users left disabled are unlimited adults.
+- **Session cap** counts a *sitting*, not a single video: episodes watched back to back
+  add up, and a 30-minute break starts a fresh sitting.
 - **Over-limit alert** — when a kid keeps actively playing more than N minutes
   (default 3) past their limit — i.e. the Stop command is being ignored — a push
   notification is sent to the configured notification targets. One alert per
