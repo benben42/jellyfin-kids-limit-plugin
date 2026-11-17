@@ -32,9 +32,6 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
     // Max seconds credited from a single progress tick (guards against long gaps/seeks).
     private const int MaxDeltaSeconds = 30;
 
-    // A gap larger than this starts a fresh "sitting" (resets the session-cap counter).
-    private const int SessionResetGapMinutes = 30;
-
     // How often the enforcement sweep runs. Short, because it is the safety net for a
     // child who presses play again the moment the screen clears: a PlaybackStart event
     // normally catches that instantly, but a client that starts quietly must not get a
@@ -280,25 +277,38 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
 
                 var gap = nowUtc - ss.LastTickUtc;
 
-                // A long gap since we last saw this session id => new sitting.
-                if (gap.TotalMinutes > SessionResetGapMinutes)
+                // A long break since this session last really watched => new sitting.
+                // Measured from the last entitled playing time rather than the last tick,
+                // so a child who is out of time and keeps pressing play is not pushing
+                // her own break further away with every attempt.
+                if (!LimitCalculator.InCurrentSitting(ss, nowUtc))
                 {
                     ss.SecondsWatched = 0;
                     ss.Warned = false;
                     ss.Blocked = false;
                     ss.OverLimitSinceUtc = null;
                     ss.OverLimitAlerted = false;
+                    ss.LastBlockMessageUtc = null;
+                    ss.StopAfterUtc = null;
+
+                    // Anchor the new sitting here, or a client that ignores Stop would
+                    // start "a fresh sitting" again on every single tick from now on.
+                    ss.LastPlayedUtc = nowUtc;
                 }
 
                 long delta = 0;
-                if (!isPaused)
+                if (!isPaused && !ss.Stopped)
                 {
                     // Credit elapsed playing time (also credits the tail end of a Stop
                     // that wasn't paused first). Clamp to guard against long gaps/seeks.
+                    // A session coming back from a stop credits nothing for the time it
+                    // spent stopped: the entry outlives the stop (see below), so its last
+                    // tick is the stop itself, not a moment of playback.
                     delta = Math.Clamp((long)Math.Round(gap.TotalSeconds), 0L, (long)MaxDeltaSeconds);
                 }
 
                 ss.LastTickUtc = nowUtc;
+                ss.Stopped = isStop;
 
                 if (delta > 0)
                 {
@@ -318,11 +328,26 @@ public sealed class WatchTimeTracker : IHostedService, IDisposable
                     ss.SecondsWatched += delta;
                     dailyState.SecondsWatchedTotal += delta;
                     dailyState.AddWindowSeconds(window, delta);
+
+                    // Only time she was entitled to keeps the sitting alive; seconds that
+                    // slip through while a stop is being announced do not.
+                    if (!ss.Blocked)
+                    {
+                        ss.LastPlayedUtc = nowUtc;
+                    }
                 }
 
                 if (isStop)
                 {
-                    dailyState.ActiveSessions.Remove(sessionId);
+                    // Keep the entry. It used to be removed here, which threw away
+                    // everything a sitting is made of: the session-cap counter restarted
+                    // with every episode (so the cap could only ever bind inside a single
+                    // item), and a child stopped at her limit came back as a brand-new
+                    // session — greeted with the full "time's up" message and its full
+                    // reading pause on every press of play, i.e. a few free seconds of
+                    // video per press, for as long as she cared to keep pressing. The
+                    // sitting check above and the idle prune are what retire an entry.
+                    ss.StopAfterUtc = null;
                     return;
                 }
 

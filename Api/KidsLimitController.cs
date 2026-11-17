@@ -326,11 +326,8 @@ public class KidsLimitController : ControllerBase
             ManuallyStopped = state.ManuallyStopped,
         };
 
-        // Current session seconds = the busiest active session (usually just one).
-        var activeSessionSeconds = state.ActiveSessions.Values
-            .Select(s => s.SecondsWatched)
-            .DefaultIfEmpty(0)
-            .Max();
+        // Current session seconds = the current sitting (usually just one device).
+        var activeSessionSeconds = LimitCalculator.SittingSeconds(state, DateTime.UtcNow);
         dto.CurrentSessionSeconds = activeSessionSeconds;
 
         var preset = cfg is null ? null : LimitCalculator.ResolvePreset(cfg, config, local);

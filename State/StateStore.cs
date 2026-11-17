@@ -391,6 +391,9 @@ public class StateStore
                 OverLimitSinceUtc = kv.Value.OverLimitSinceUtc,
                 OverLimitAlerted = kv.Value.OverLimitAlerted,
                 LastTickUtc = kv.Value.LastTickUtc,
+                LastPlayedUtc = kv.Value.LastPlayedUtc,
+                Stopped = kv.Value.Stopped,
+                LastBlockMessageUtc = kv.Value.LastBlockMessageUtc,
             },
             StringComparer.Ordinal),
     };

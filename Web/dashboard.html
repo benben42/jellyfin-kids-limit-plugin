@@ -122,6 +122,14 @@
         // clearly explained by granted bonus rather than looking like a broken limit.
         function barRow(label, used, cap, bonusSec) {
             bonusSec = bonusSec || 0;
+            // A scope with no cap has nothing to measure against: a full green bar reading
+            // "0m / ∞" for each of them was most of the card and said nothing. Only today's
+            // total is worth keeping when uncapped, as a plain figure.
+            if (cap === null || cap === undefined) {
+                return label === 'Today'
+                    ? '<div class="klBarRow"><span class="lbl">Today</span><span class="klSub">' + fmt(used) + ' watched · no daily cap</span></div>'
+                    : '';
+            }
             var capLabel = capText(cap);
             if (bonusSec > 0 && cap !== null && cap !== undefined) {
                 capLabel += ' <span class="klBonusTag">+' + Math.round(bonusSec / 60) + 'b</span>';

@@ -74,9 +74,13 @@ spike/stop-test.sh            Shell probe: does the real TV honor Stop? (see als
 ```
 
 There are **no tests, no linter config, no .editorconfig, and no analyzers**. CI only builds.
-The container this repo is usually cloned into has **no .NET SDK installed** — `dotnet build`
-will not run locally; rely on the GitHub Actions build for compile verification, and be
-correspondingly careful about compile errors.
+The cloud container has no .NET SDK preinstalled, but `apt-get install -y dotnet-sdk-10.0`
+works there and then `dotnet build` does too. A real server is also within reach for
+end-to-end checks: start `dockerd`, run `jellyfin/jellyfin` with the built DLL in
+`/config/plugins/KidsLimit/`, and drive it with a scripted client. Note what Jellyfin 12
+requires of such a client: the websocket takes `?ApiKey=` (the legacy `?api_key=` is
+refused) and must send `KeepAlive` every ~15 s or the server drops it — and a session
+with no live socket silently swallows Stop and DisplayMessage.
 
 ## Build & release
 
@@ -107,8 +111,14 @@ successor — a 10.11 server filters by `targetAbi` and will simply keep offerin
    press play the moment the screen clears, must not escape). The disk-touching housekeeping
    — rollover, pruning, forced flush — runs on every third sweep.
 2. Every tick credits the elapsed gap **only when not paused**, clamped to
-   `MaxDeltaSeconds` (30) to survive long gaps/seeks. A gap over
-   `SessionResetGapMinutes` (30) starts a fresh "sitting" and resets the session counter.
+   `MaxDeltaSeconds` (30) to survive long gaps/seeks. The session cap counts a
+   **sitting**, not an item: the per-session entry is **kept across `PlaybackStopped`**
+   (flagged `Stopped`, so the time spent stopped is never credited) and only a break of
+   `LimitCalculator.SittingGapMinutes` (30) since `LastPlayedUtc` starts a fresh one.
+   Removing the entry on stop — as the code once did — resets the session counter on
+   every episode and turns each press of play at the limit into a brand-new session
+   that earns the full "time's up" grace again. Status endpoints read the same counter
+   through `LimitCalculator.SittingSeconds`.
 3. A parent "Stop now" (`DailyState.ManuallyStopped`) is checked first and outranks any
    remaining budget — deliberately *ahead* of the paused guard, since a paused TV is still
    a TV to a parent. Otherwise `LimitCalculator.Compute` returns the **most restrictive**
@@ -187,11 +197,17 @@ are **written through immediately** — earned coins must survive a crash. Both 
 
 **Two auth schemes, both on `[AllowAnonymous]` controllers.** Parent endpoints check the
 shared `BonusApiToken` via `?token=` or the `X-KidsLimit-Token` header; **an empty configured
-token disables the API entirely** (returns false, not "allow"). Kid endpoints
+token disables the API entirely** (returns false, not "allow"); a fresh install generates one in `Plugin.MigrateConfiguration`
+so the dashboards work out of the box, and an existing blank token is left alone. Kid endpoints
 (`/KidsLimit/kid…`) use the per-user `KidToken` and may only touch that kid's own wallet,
 claims, and redeems. `SettingsController.SaveSettings` deliberately ignores an empty posted
 `BonusApiToken` so a parent can't lock themselves out of the page they're editing from.
 One-tap approve/decline links use a per-claim random `ActionKey` that dies once handled.
+
+**Admin pages are fragments, not documents.** Jellyfin's web client lifts the
+`data-role="page"` element out of `configPage.html` / `dashboard.html` and discards the
+rest, `<head>` included. Any `<style>` or `<script>` must sit inside that element or it
+silently never loads.
 
 **Embedded resources.** All four HTML pages and `Web/clipart/*.{svg,png,webp,jpg}` are
 embedded. The clipart globs mean **adding art needs no csproj edit**. Resource names are

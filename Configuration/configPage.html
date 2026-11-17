@@ -3,6 +3,14 @@
 <head>
     <meta charset="utf-8" />
     <title>Kids Watch-Time Limit</title>
+</head>
+<body>
+<div id="kidsLimitConfigPage" data-role="page" class="page type-interior pluginConfigurationPage"
+     data-require="emby-input,emby-button,emby-select,emby-checkbox,emby-collapse">
+    <!-- The styles live INSIDE the page element on purpose. Jellyfin's web client does not
+         load this file as a document: it lifts the data-role="page" element out and drops
+         everything else, <head> included. With the <style> up there the collapsible cards
+         never collapsed and every preset and kid rendered fully expanded. -->
     <style>
         /* Collapsible cards: keep long lists of presets/kids scannable. The header shows a
            one-line summary; the editable fields live in a body that toggles open on click. */
@@ -30,10 +38,6 @@
         .kl-help > summary { cursor: pointer; opacity: .8; }
         .kl-help[open] > summary { margin-bottom: .5em; }
     </style>
-</head>
-<body>
-<div id="kidsLimitConfigPage" data-role="page" class="page type-interior pluginConfigurationPage"
-     data-require="emby-input,emby-button,emby-select,emby-checkbox,emby-collapse">
     <div data-role="content">
         <div class="content-primary">
             <form id="kidsLimitConfigForm">
@@ -165,7 +169,7 @@
                         much shorter pause, so pressing play over and over can't buy extra minutes.
                     </div>
                     <details class="kl-help fieldDescription">
-                        <summary>How limits are enforced now</summary>
+                        <summary>How limits are enforced</summary>
                         <p>
                             The plugin stops the stream by asking the client to stop, and keeps asking
                             on every check while the kid is over their limit. No Jellyfin account
@@ -173,11 +177,9 @@
                             can't play until they have time again.
                         </p>
                         <p>
-                            Earlier versions also blocked the account at the server, because the Android
-                            TV client used to ignore Stop. Bench-testing the Jellyfin 12 client showed it
-                            honors Stop, so that path was removed. The trade-off: if a future client
-                            update starts ignoring Stop again, there is no fallback — which is exactly
-                            what the over-limit alert below is for. Keep it switched on.
+                            A file the TV plays directly can only be stopped with the TV app's
+                            cooperation. If an app update ever starts ignoring Stop, the over-limit
+                            alert below is what tells you — keep it switched on.
                         </p>
                     </details>
                 </div>
@@ -229,8 +231,9 @@
                 <div class="verticalSection">
                     <h3 class="sectionTitle">Per-user limits</h3>
                     <div class="fieldDescription">
-                        Click a kid to enable limits and assign a preset to each weekday. Date overrides beat
-                        the weekly schedule.
+                        Click a kid, switch limits on, and choose which preset applies on each weekday. A day
+                        with no preset is unlimited. Date overrides (sick day, holiday) beat the weekly
+                        schedule for that one date.
                     </div>
                     <div id="usersContainer"></div>
                 </div>
@@ -316,21 +319,6 @@
                     </div>
                 </div>
 
-                <div class="verticalSection">
-                    <h3 class="sectionTitle">Reference titles (kid page "watch" tiles)</h3>
-                    <div class="fieldDescription">
-                        The kid spends coins by picking one of these posters; the coin cost comes from the
-                        item's runtime (median episode runtime for a series). Save the API token on the
-                        General tab first — search uses it.
-                    </div>
-                    <div id="refTitlesContainer"></div>
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="refSearch">Search library (movies &amp; series)</label>
-                        <input is="emby-input" type="text" id="refSearch" />
-                    </div>
-                    <button is="emby-button" type="button" id="btnRefSearch" class="raised"><span>Search</span></button>
-                    <div id="refResults" style="margin-top:.5em;"></div>
-                </div>
                 </div><!-- /tab rewards -->
 
                 <div>
@@ -350,8 +338,6 @@
         var presets = [];
         var userConfigs = [];
         var chores = [];
-        var refItemIds = [];
-        var refResolved = {}; // itemId -> {Name, Type, RuntimeMinutes, CoinCost}
         var notifyTargets = [];
 
         var NOTIFY_TYPES = ['Ntfy', 'Pushover', 'Gotify', 'Discord', 'Slack', 'Telegram', 'Apprise', 'Webhook'];
@@ -360,7 +346,7 @@
         // cleared box can be restored client-side instead of round-tripping an empty string.
         var MESSAGE_FIELDS = [
             { id: 'warnMessageHeader', key: 'WarnMessageHeader', def: '⏰ Almost done' },
-            { id: 'warnMessageText', key: 'WarnMessageText', def: '⏰ {minutes} more minutes of TV, then it\'s time to stop. 📺' },
+            { id: 'warnMessageText', key: 'WarnMessageText', def: '⏰ {minutes} min of TV left, then it\'s time to stop. 📺' },
             { id: 'limitMessageHeader', key: 'LimitMessageHeader', def: '🛑 Time\'s up!' },
             { id: 'limitMessageText', key: 'LimitMessageText', def: '📺💤 No more TV right now. 🪙 Do a chore to earn more time!' },
             { id: 'blockedMessageHeader', key: 'BlockedMessageHeader', def: '🛑 TV is sleeping' },
@@ -539,7 +525,7 @@
                     badge + '<span class="kl-caret">&#9662;</span></div>' +
                     '<div class="kl-cardBody">' +
                     '<label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="userEnabled"' +
-                    (cfg.Enabled ? ' checked' : '') + ' /><span>Enable limits</span></label>' +
+                    (cfg.Enabled ? ' checked' : '') + ' /><span>Limit watch time for this user</span></label>' +
                     '<div class="inputContainer"><label class="inputLabel inputLabelUnfocused">Warn minutes before limit</label>' +
                     '<input is="emby-input" type="number" min="0" class="warnMinutes" value="' +
                     (cfg.WarnMinutesBeforeLimit != null ? cfg.WarnMinutesBeforeLimit : 10) + '" /></div>' +
@@ -571,11 +557,30 @@
             container.querySelectorAll('.btnGenKidToken').forEach(function (btn) {
                 btn.addEventListener('click', function (e) {
                     e.stopPropagation();
-                    var arr = new Uint8Array(16);
-                    (window.crypto || window.msCrypto).getRandomValues(arr);
-                    var tok = Array.prototype.map.call(arr, function (b) {
-                        return ('0' + b.toString(16)).slice(-2); }).join('');
-                    this.closest('.kl-cardBody').querySelector('.kidToken').value = tok;
+                    this.closest('.kl-cardBody').querySelector('.kidToken').value = randomToken();
+                });
+            });
+
+            // Ticking the limit box on a kid with nothing set up yet fills in a sensible
+            // start: school days Mon-Fri, weekend Sat-Sun, and a kid-page token. A kid who is
+            // enabled but has no preset on a day is UNLIMITED that day, so leaving the seven
+            // dropdowns empty used to switch limits "on" while limiting nothing at all.
+            // Only empty fields are touched; anything the parent already chose is kept.
+            container.querySelectorAll('.userEnabled').forEach(function (box) {
+                box.addEventListener('change', function () {
+                    if (!this.checked) { return; }
+                    var body = this.closest('.kl-cardBody');
+                    var selects = body.querySelectorAll('select.weekday');
+                    var anySet = Array.prototype.some.call(selects, function (sel) { return !!sel.value; });
+                    if (!anySet) {
+                        Array.prototype.forEach.call(selects, function (sel) {
+                            var key = sel.getAttribute('data-key');
+                            var want = (key === 'SaturdayPresetId' || key === 'SundayPresetId') ? 'weekend' : 'school-day';
+                            if (sel.querySelector('option[value="' + want + '"]')) { sel.value = want; }
+                        });
+                    }
+                    var tok = body.querySelector('.kidToken');
+                    if (!tok.value.trim()) { tok.value = randomToken(); }
                 });
             });
             container.querySelectorAll('.btnCopyKidUrl').forEach(function (btn) {
@@ -590,6 +595,13 @@
                     if (navigator.clipboard) { navigator.clipboard.writeText(url).catch(function () {}); }
                 });
             });
+        }
+
+        function randomToken() {
+            var arr = new Uint8Array(16);
+            (window.crypto || window.msCrypto).getRandomValues(arr);
+            return Array.prototype.map.call(arr, function (b) {
+                return ('0' + b.toString(16)).slice(-2); }).join('');
         }
 
         function overrideRow(date, presetId) {
@@ -779,70 +791,6 @@
             });
         }
 
-        function refInfoText(id) {
-            var r = refResolved[normId(id)];
-            if (!r) { return id; }
-            return r.Name + ' (' + r.Type + ', ~' + r.RuntimeMinutes + 'm, 🪙' + r.CoinCost + ')';
-        }
-
-        function renderRefTitles() {
-            var html = '';
-            refItemIds.forEach(function (id, i) {
-                html += '<div class="paperList" style="padding:.5em 1em;margin-bottom:.3em;display:flex;align-items:center;gap:8px;">' +
-                    '<span style="flex:1 1 auto;">' + esc(refInfoText(id)) + '</span>' +
-                    '<button is="emby-button" type="button" class="raised button-cancel btnRemoveRef" data-idx="' + i + '"><span>×</span></button>' +
-                    '</div>';
-            });
-            var container = page.querySelector('#refTitlesContainer');
-            container.innerHTML = html || '<div class="fieldDescription">No reference titles yet — search below.</div>';
-            container.querySelectorAll('.btnRemoveRef').forEach(function (btn) {
-                btn.addEventListener('click', function () {
-                    refItemIds.splice(parseInt(this.getAttribute('data-idx'), 10), 1);
-                    renderRefTitles();
-                });
-            });
-        }
-
-        function resolveRefTitles() {
-            if (!refItemIds.length || !page.querySelector('#bonusApiToken').value.trim()) { return; }
-            parentApi('items/resolve?ids=' + encodeURIComponent(refItemIds.join(','))).then(function (list) {
-                list.forEach(function (r) { refResolved[normId(r.ItemId)] = r; });
-                renderRefTitles();
-            }, function () {});
-        }
-
-        function searchRefTitles() {
-            var q = page.querySelector('#refSearch').value.trim();
-            var out = page.querySelector('#refResults');
-            if (!q) { return; }
-            if (!page.querySelector('#bonusApiToken').value.trim()) {
-                out.innerHTML = '<div class="fieldDescription">Set the API token on the General tab first.</div>';
-                return;
-            }
-            out.innerHTML = '<div class="fieldDescription">Searching…</div>';
-            parentApi('items/search?q=' + encodeURIComponent(q)).then(function (list) {
-                if (!list.length) { out.innerHTML = '<div class="fieldDescription">No matches.</div>'; return; }
-                out.innerHTML = list.map(function (r) {
-                    refResolved[normId(r.ItemId)] = r;
-                    var added = refItemIds.some(function (id) { return normId(id) === normId(r.ItemId); });
-                    return '<div class="paperList" style="padding:.5em 1em;margin-bottom:.3em;display:flex;align-items:center;gap:8px;">' +
-                        '<span style="flex:1 1 auto;">' + esc(refInfoText(r.ItemId)) + '</span>' +
-                        (added ? '<span class="fieldDescription">added</span>'
-                            : '<button is="emby-button" type="button" class="raised btnAddRef" data-id="' + esc(r.ItemId) + '"><span>Add</span></button>') +
-                        '</div>';
-                }).join('');
-                out.querySelectorAll('.btnAddRef').forEach(function (btn) {
-                    btn.addEventListener('click', function () {
-                        refItemIds.push(this.getAttribute('data-id'));
-                        renderRefTitles();
-                        searchRefTitles(); // refresh "added" markers
-                    });
-                });
-            }, function () {
-                out.innerHTML = '<div class="fieldDescription">Search failed — is the API token saved?</div>';
-            });
-        }
-
         function findUserCfg(userId) {
             for (var i = 0; i < userConfigs.length; i++) {
                 if (normId(userConfigs[i].UserId) === normId(userId)) { return userConfigs[i]; }
@@ -921,7 +869,6 @@
                     cfg.OverLimitAlertMinutes > 0 ? cfg.OverLimitAlertMinutes : 3;
 
                 chores = cfg.Chores || [];
-                refItemIds = (cfg.ReferenceItemIds || []).slice();
                 page.querySelector('#coinMinutes').value = cfg.CoinMinutes || 5;
                 page.querySelector('#bankCapCoins').value = cfg.BankCapCoins != null ? cfg.BankCapCoins : 24;
                 page.querySelector('#maxRedeemCoinsPerDay').value =
@@ -934,8 +881,6 @@
                 renderUsers();
                 renderChores();
                 renderNotifyTargets();
-                renderRefTitles();
-                resolveRefTitles();
                 Dashboard.hideLoadingMsg();
             });
         }
@@ -969,7 +914,6 @@
                 cfg.MaxRedeemCoinsPerDay = parseInt(page.querySelector('#maxRedeemCoinsPerDay').value, 10) || 0;
                 cfg.DefaultSpendCoins = parseInt(page.querySelector('#defaultSpendCoins').value, 10) || 3;
                 cfg.Chores = chores;
-                cfg.ReferenceItemIds = refItemIds;
                 cfg.NotificationTargets = notifyTargets;
                 ApiClient.updatePluginConfiguration(pluginId, cfg).then(function (r) {
                     Dashboard.processPluginConfigurationUpdateResult(r);
@@ -1069,11 +1013,6 @@
                 }, function () {
                     out.textContent = 'Test failed — is the API token saved?';
                 });
-            });
-
-            page.querySelector('#btnRefSearch').addEventListener('click', searchRefTitles);
-            page.querySelector('#refSearch').addEventListener('keydown', function (e) {
-                if (e.key === 'Enter') { e.preventDefault(); searchRefTitles(); }
             });
 
             page.querySelectorAll('.kidsLimitTab').forEach(function (btn) {
